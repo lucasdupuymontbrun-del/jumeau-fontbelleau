@@ -13,6 +13,14 @@
 | Comparatif | `comparatif/index.html`, `data/comparatif/comparatif.json`, `comparatif/docs/` | `tools/build_comparatif.py` |
 | QR code du jumeau | `qr/Jumeau-Energetique.*`, `qr/Etiquette_Jumeau-Energetique.pdf` | `tools/qr.py` ; à refaire seulement si l'adresse du site change |
 
+## 1 bis. Prise en main
+
+La page est organisée en trois questions (onglets du panneau de gauche) : « Tout va bien ? » (logements en vert, orange ou rouge), « Problèmes » (alertes en langage simple, avec ce qu'il faut faire) et « A1 ou A2 ? » (comparaison sur l'année). Un mois se choisit sous la maquette ; le bouton lecture fait défiler l'année jour par jour. Les réglages avancés (compteur affiché, couleur selon la quantité consommée, vue en plan) sont dans « Pour aller plus loin ».
+
+Couleurs : vert jusqu'à +20 % par rapport à des logements semblables, orange de +20 à +30 %, rouge au-delà (même seuil que la règle d'alerte R1). Chauffage : référence recalée (météo, taille, étage, orientation) ; eau et eau chaude : par occupant, comparées à la tour ; électricité : comparée aux logements de la tour qui ont le même nombre d'occupants.
+
+Présentation pour l'oral : bouton « Présentation en 5 étapes », ou adresse `…/jumeau-fontbelleau/?presentation` pour la lancer à l'ouverture. Les textes des étapes sont calculés à partir des données (`tourSteps()` dans `assets/js/energie.js`) ; les textes simples des alertes (`titre_simple`, `resume`, `faire`) sont dans `ALERT_TEXT` de `tools/build_energie.py`.
+
 ## 2. Mettre à jour après une modification de la maquette
 
 Les deux générateurs lisent le site du passeport (registre des ouvrages `data/index.json`, fiches `data/o/`, maquette 3D `model/`). Ils cherchent le dépôt `passeport-fontbelleau` à côté de celui-ci ; sinon, donner son chemin en argument ou dans la variable `FONTBELLEAU_PASSEPORT`.

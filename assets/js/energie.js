@@ -10,7 +10,7 @@ function el(tag, attrs = {}, ...kids) {
   for (const [k, v] of Object.entries(attrs || {})) {
     if (v == null || v === false) continue;
     if (k === 'class') n.className = v; else if (k === 'text') n.textContent = v; else if (k === 'html') n.innerHTML = v;
-    else if (k === 'style' && typeof v === 'object') Object.assign(n.style, v);
+    else if (k === 'style' && typeof v === 'object') { for (const [sk, sval] of Object.entries(v)) { if (sk.startsWith('--')) n.style.setProperty(sk, sval); else n.style[sk] = sval; } }
     else if (k.startsWith('on')) n.addEventListener(k.slice(2), v); else n.setAttribute(k, v === true ? '' : v);
   }
   for (const c of kids.flat()) if (c != null && c !== false) n.append(c.nodeType ? c : document.createTextNode(String(c)));
@@ -37,6 +37,16 @@ const USAGE = {
 };
 const DIVERGE = ['#3987e5', '#2f5c93', '#3a3f45', '#93453f', '#e66767'];
 const STATUS = { critique: { c: '#d03b3b', icon: 'i-octagon', label: 'Critique' }, serieuse: { c: '#ec835a', icon: 'i-alert', label: 'Importante' }, attention: { c: '#fab219', icon: 'i-info', label: 'À surveiller' } };
+const LIGHTS = {
+  ok: { c: '#34b27b', k: 0.6, label: 'Normal', note: 'comme des logements semblables' },
+  plus: { c: '#f2a33a', k: 0.88, label: 'Un peu trop', note: '20 à 30 % de plus' },
+  trop: { c: '#ef4d55', k: 1, label: 'Beaucoup trop', note: 'plus de 30 % de plus' },
+  vide: { c: '#4a545c', k: 0.12, label: 'Pas encore habité', note: '' },
+};
+const ORIENT = { N: 'nord', NE: 'nord-est', E: 'est', SE: 'sud-est', S: 'sud', SO: 'sud-ouest', O: 'ouest', NO: 'nord-ouest' };
+const etageLabel = (n) => (n === 1 ? '1er étage' : `${n}e étage`);
+const PRIX_K = { h: 'prix_chaleur', e: 'prix_chaleur', w: 'prix_eau', p: 'prix_elec' };
+const euros = (k, v) => (k === 'h' || k === 'e' ? v / 1000 * S.hyp.prix_chaleur : k === 'w' ? v / 1000 * S.hyp.prix_eau : v * S.hyp.prix_elec);
 const PASSEPORT = 'https://lucasdupuymontbrun-del.github.io/passeport-fontbelleau/';
 const fiche = (ref) => `${PASSEPORT}o/?r=${encodeURIComponent(ref)}#energie`;
 const TYPE_ICON = { chauffage: 'i-flame', eau: 'i-drop', donnees: 'i-wifi-off', reseau: 'i-network', ventilation: 'i-fan' };
@@ -44,7 +54,7 @@ const FAMILLE = { menuiserie_ext: 'Menuiserie', ecaille: 'Écaille', garde_corps
 
 const S = {
   J: null, L: [], byId: new Map(), series: null, ouv: null, days: [], N: 0, ND: 0,
-  usage: 'chauffage', color: 'intensite', period: 'an', day: 112, tower: 'ALL', floor: 0, sel: null, special: null,
+  usage: 'chauffage', color: 'statut', period: 'mois', day: 112, tab: 'etat', tower: 'ALL', floor: 0, sel: null, special: null,
   playing: false, twin: null, scale: {}, hyp: {}, index: null,
 };
 
@@ -126,10 +136,11 @@ const sumT = (z, k, a, b) => S.J.tours[z].jour.P[k][b + 1] - S.J.tours[z].jour.P
 function fmtDay(d, long = false) { const x = S.days[d]; return long ? `${x.getDate()} ${MOIS_L[x.getMonth()]} ${x.getFullYear()}` : `${x.getDate()} ${MOIS[x.getMonth()]} ${x.getFullYear()}`; }
 function dayIndex(iso) { return Math.round((new Date(iso + 'T12:00:00') - S.days[0]) / 86400000); }
 function periodLabel() {
-  if (S.period === 'an') return 'Année complète';
+  if (S.period === 'an') return 'Toute l\'année';
   if (S.period === 'mois') { const [a] = range(); const x = S.days[a]; return `${MOIS_L[x.getMonth()]} ${x.getFullYear()}`; }
   return 'Moyenne des 7 derniers jours';
 }
+function monthName(day = S.day) { const x = S.days[day]; const m = MOIS_L[x.getMonth()]; return `${m[0].toUpperCase()}${m.slice(1)} ${x.getFullYear()}`; }
 
 // ------------------------------------------------------------------ couleurs
 function hex2rgb(h) { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
@@ -144,13 +155,27 @@ function valueOf(l, u = S.usage) {
   const v = sumL(l, k, a, b) / l.shab;
   return S.period === 'jour' ? v / (b - a + 1) : v;
 }
+function occupied(l) { const [, b] = range(); return dayIndex(l.emmenagement) <= b; }
 function ecartOf(l, u = S.usage) {
   const [a, b] = range();
   if (u === 'chauffage') { const r = sumL(l, 'r', a, b); return r > 0.5 ? sumL(l, 'h', a, b) / r - 1 : 0; }
-  const peers = S.L.filter(x => x.tour === l.tour && x.typo.slice(0, 2) === l.typo.slice(0, 2));
-  const vals = peers.map(x => valueOf(x, u)).sort((p, q) => p - q);
-  const med = vals[Math.floor(vals.length / 2)];
-  return med > 0 ? valueOf(l, u) / med - 1 : 0;
+  // eau et eau chaude : par occupant et par jour de présence, comparées à la médiane de la tour ;
+  // électricité : par jour de présence, comparée aux logements de la tour qui ont le même nombre d'occupants
+  const k = USAGE[u].key, perOcc = u !== 'elec';
+  const rate = (x) => { const d = b - Math.max(a, dayIndex(x.emmenagement)) + 1; return d > 0 ? sumL(x, k, a, b) / (perOcc ? x.occupants : 1) / d : 0; };
+  const key = `${u}|${l.tour}|${perOcc ? '' : l.occupants}|${a}|${b}`;
+  const cache = S._med || (S._med = new Map());
+  if (!cache.has(key)) {
+    const vals = S.L.filter(x => x.tour === l.tour && occupied(x) && (perOcc || x.occupants === l.occupants)).map(rate).sort((p, q) => p - q);
+    cache.set(key, vals[Math.floor(vals.length / 2)]);
+  }
+  const med = cache.get(key);
+  return med > 0 ? rate(l) / med - 1 : 0;
+}
+function lightOf(l, u = S.usage) {
+  if (!occupied(l)) return 'vide';
+  const e = ecartOf(l, u);
+  return e > 0.30 ? 'trop' : e > 0.20 ? 'plus' : 'ok';
 }
 function visible(l) { return (S.tower === 'ALL' || l.tour === S.tower); }
 function paint() {
@@ -161,7 +186,9 @@ function paint() {
   for (const l of S.L) {
     let rgb, k;
     if (!visible(l)) { rgb = [0, 0, 0]; k = 0; }
-    else if (S.color === 'intensite') {
+    else if (S.color === 'statut') {
+      const g = LIGHTS[lightOf(l)]; rgb = hex2rgb(g.c); k = g.k;
+    } else if (S.color === 'intensite') {
       const t = Math.pow(Math.min(1.15, valueOf(l) / vmax), 0.9);
       rgb = rampAt(U.ramp, 0.12 + 0.88 * Math.min(1, t)); k = Math.min(1, t);
     } else {
@@ -178,21 +205,27 @@ function paint() {
 }
 function renderLegend() {
   const U = USAGE[S.usage];
-  const bar = bind('legend-bar');
-  if (S.color === 'intensite') {
-    bar.style.background = `linear-gradient(90deg, ${U.ramp.slice(1).join(',')})`;
-    const unit = S.usage === 'eau' ? 'L/m²' : 'kWh/m²';
-    bind('legend-title').textContent = `${U.label}, ${unit}${S.period === 'jour' ? ' par jour' : ''}`;
-    const vmax = S.scale[S.usage][S.period];
-    const d = vmax < 1 ? 2 : vmax < 10 ? 1 : 0;
-    bind('legend-min').textContent = '0';
-    bind('legend-mid').textContent = fmt(vmax / 2, d);
-    bind('legend-max').textContent = `≥ ${fmt(vmax, d)}`;
-  } else {
-    bar.style.background = `linear-gradient(90deg, ${DIVERGE.join(',')})`;
-    bind('legend-title').textContent = S.usage === 'chauffage' ? 'Écart à la référence recalée' : `Écart aux logements comparables`;
-    bind('legend-min').textContent = '−40 %'; bind('legend-mid').textContent = '0'; bind('legend-max').textContent = '+40 %';
+  const box = bind('legend'); box.textContent = '';
+  if (S.color === 'statut') {
+    const [a, b] = range();
+    const vide = S.L.some(l => visible(l) && !occupied(l));
+    box.classList.add('is-lights');
+    box.append(el('span', { class: 'lr-title', text: `${U.label}, comparé à des logements semblables` }));
+    const g4 = el('span', { class: 'lr-grid' });
+    for (const g of ['ok', 'plus', 'trop', ...(vide ? ['vide'] : [])]) {
+      const L = LIGHTS[g];
+      g4.append(el('span', { class: 'lr-row' }, el('i', { style: { background: L.c, color: L.c } }), el('b', { text: L.label })));
+    }
+    box.append(g4);
+    return;
   }
+  box.classList.remove('is-lights');
+  const unit = S.usage === 'eau' ? 'L/m²' : 'kWh/m²';
+  const vmax = S.scale[S.usage][S.period];
+  const d = vmax < 1 ? 2 : vmax < 10 ? 1 : 0;
+  box.append(el('span', { class: 'lr-title', text: `${U.label}, ${unit}${S.period === 'jour' ? ' par jour' : ''}` }),
+    el('span', { class: 'lr-bar', style: { background: `linear-gradient(90deg, ${U.ramp.slice(1).join(',')})` } }),
+    el('span', { class: 'lr-ticks' }, el('span', { text: '0' }), el('span', { text: fmt(vmax / 2, d) }), el('span', { text: `≥ ${fmt(vmax, d)}` })));
 }
 
 // ------------------------------------------------------------------ indicateurs
@@ -215,34 +248,66 @@ function totals(towers, a, b) {
 function renderKpis() {
   const [a, b] = range();
   const t = totals(scopeTowers(), a, b);
+  // feu tricolore : nombre de logements par couleur
+  const L = S.L.filter(visible);
+  const n = { ok: 0, plus: 0, trop: 0, vide: 0 };
+  for (const l of L) n[lightOf(l)]++;
+  const U = USAGE[S.usage];
+  const quand = S.period === 'an' ? 'Sur l\'année' : S.period === 'mois' ? `En ${periodLabel()}` : `Autour du ${fmtDay(S.day)}`;
+  const pb = n.plus + n.trop;
+  const usageTxt = S.usage === 'chauffage' ? 'de chauffage' : S.usage === 'ecs' ? 'd\'eau chaude' : S.usage === 'eau' ? 'd\'eau' : 'd\'électricité';
+  bind('state-line').textContent = pb === 0
+    ? `${quand}, les ${n.ok} logements habités ont une consommation ${usageTxt} normale.`
+    : `${quand} : ${n.ok} logement${n.ok > 1 ? 's' : ''} ${n.ok > 1 ? 'normaux' : 'normal'}, ${pb} consomme${pb > 1 ? 'nt' : ''} trop ${usageTxt}.`;
+  const lights = bind('lights'); lights.textContent = '';
+  for (const g of ['ok', 'plus', 'trop', ...(n.vide ? ['vide'] : [])]) {
+    const G = LIGHTS[g];
+    lights.append(el('div', { class: 'light', style: { '--lc': G.c } }, el('i'), el('span', { class: 'lt-l' }, el('b', { text: G.label }), G.note ? el('small', { text: G.note }) : null), el('span', { class: 'lt-n', text: String(n[g]) })));
+  }
   const box = bind('kpis'); box.textContent = '';
-  const big = t.reseau > 20000;
-  const tile = (l, v, u, s, wide) => el('div', { class: 'kpi' + (wide ? ' is-wide' : '') }, el('span', { class: 'kpi-l', text: l }), el('span', { class: 'kpi-v' }, v, el('small', { text: u })), s ? el('span', { class: 'kpi-s', text: s }) : null);
+  const tile = (l, v, u, s) => el('div', { class: 'kpi' }, el('span', { class: 'kpi-l', text: l }), el('span', { class: 'kpi-v' }, v, el('small', { text: u })), s ? el('span', { class: 'kpi-s', text: s }) : null);
   box.append(
-    tile('Chaleur achetée au réseau', big ? fmt(t.reseau / 1000, 1) : fmt(t.reseau), big ? 'MWh' : 'kWh', `${fmt(t.reseau / t.shab, 1)} kWh/m²`),
-    tile('Énergie et eau', t.cout > 10000 ? fmt(t.cout / 1000, 1) : fmt(t.cout), t.cout > 10000 ? 'k€ TTC' : '€ TTC', `${fmt(t.cout / t.nlog)} € par logement`),
-    tile('Émissions', t.co2 > 5000 ? fmt(t.co2 / 1000, 1) : fmt(t.co2), t.co2 > 5000 ? 't CO₂e' : 'kg CO₂e', `${fmt(t.co2 / t.shab, 1)} kg/m²`),
-    tile('Eau', fmt(t.eau, t.eau < 100 ? 1 : 0), 'm³', `${fmt(t.eau * 1000 / t.pers / t.nd)} L par habitant et par jour`),
+    tile('Facture énergie et eau', t.cout > 10000 ? fmt(t.cout / 1000, 1) : fmt(t.cout), t.cout > 10000 ? 'k€' : '€', `≈ ${fmt(t.cout / t.nlog)} € par logement`),
+    tile('Chaleur achetée', t.reseau > 20000 ? fmt(t.reseau / 1000, 1) : fmt(t.reseau), t.reseau > 20000 ? 'MWh' : 'kWh', `≈ ${fmt(t.reseau / 1000 * S.hyp.prix_chaleur)} € au réseau de chaleur`),
   );
-  bind('date-mode').textContent = periodLabel();
+  bind('date-mode').textContent = '';
+}
+function variantGain() {
+  const J = S.J, H = S.hyp, last = S.ND - 1;
+  const sh2 = J.tours.A2.shab, sh1 = J.tours.A1.shab;
+  const heat = (z) => S.L.filter(l => l.tour === z).reduce((s, l) => s + sumL(l, 'h', 0, last), 0);
+  const dHeat = (heat('A1') / sh1 - heat('A2') / sh2) * sh2;
+  const solar = sumT('A2', 'solaire', 0, last);
+  const dVent = (sumT('A2', 'ventilation', 0, last) / sh2 - sumT('A1', 'ventilation', 0, last) / sh1) * sh2;
+  const heatKwh = (dHeat + solar) * (1 + J.calage.pertes_distribution.A2);
+  return { eur: heatKwh / 1000 * H.prix_chaleur - dVent * H.prix_elec, co2: heatKwh * H.co2_chaleur - dVent * H.co2_elec, heatKwh, dVent };
 }
 function renderCmp() {
-  const [a, b] = range();
-  const U = USAGE[S.usage]; const k = U.key;
-  const per = (z) => { const L = S.L.filter(l => l.tour === z); return L.reduce((s, l) => s + sumL(l, k, a, b), 0) / S.J.tours[z].shab; };
-  const v1 = per('A1'), v2 = per('A2');
-  const mx = Math.max(v1, v2) || 1;
-  const unit = S.usage === 'eau' ? 'L/m²' : 'kWh/m²';
-  const d = mx < 10 ? 1 : 0;
-  const box = bind('cmp'); box.textContent = '';
-  box.style.setProperty('--uc', `var(${U.css})`);
-  const row = (z, v, hollow) => el('div', { class: 'cmp-row' }, el('b', { text: z }),
-    el('div', { class: 'cmp-track' }, el('div', { class: 'cmp-fill' + (hollow ? ' is-hollow' : ''), style: { width: `${(v / mx) * 100}%` } })),
-    el('span', { text: `${fmt(v, d)} ${unit}` }));
-  const g = v1 > 0 ? (v2 / v1 - 1) * 100 : 0;
-  const why = { chauffage: 'ITE 140 mm (même ventilation hygro B, en hybride)', ecs: "plus d'occupants par logement en A2 (logement social)", eau: "plus d'occupants par logement en A2", elec: 'usages privés, hors ventilation' }[S.usage];
-  box.append(el('h2', { text: `${U.label} : tour A1 (DCE) et tour A2 (variante)` }), row('A1', v1, true), row('A2', v2, false),
-    el('p', { class: 'cmp-gain' }, el('b', { text: `${g > 0 ? '+' : ''}${fmt(g, 0)} %` }), ` en A2 · ${why}`));
+  const box = bind('cmp'); if (box.childElementCount && !S._cmpDirty) return; S._cmpDirty = false;
+  box.textContent = '';
+  const J = S.J, last = S.ND - 1;
+  const per = (z, k) => S.L.filter(l => l.tour === z).reduce((s, l) => s + sumL(l, k, 0, last), 0) / J.tours[z].shab;
+  const vent = (z) => sumT(z, 'ventilation', 0, last) / J.tours[z].shab;
+  const rows = [
+    { l: 'Chauffage', s: 'kWh par m² et par an', a: per('A1', 'h'), b: per('A2', 'h'), c: 'var(--s-chauffage)' },
+    { l: 'Électricité des ventilateurs', s: 'kWh par m² et par an', a: vent('A1'), b: vent('A2'), c: 'var(--s-elec)' },
+  ];
+  const g = variantGain();
+  box.append(el('p', { class: 'pane-lead', text: 'Sur l\'année, la tour A2 (variante du groupe) face à la tour A1 (conception du DCE).' }));
+  for (const r of rows) {
+    const mx = Math.max(r.a, r.b) || 1, ec = (r.b / r.a - 1) * 100, d = mx < 10 ? 1 : 0;
+    box.append(el('div', { class: 'vs', style: { '--uc': r.c } },
+      el('div', { class: 'vs-h' }, el('b', { text: r.l }), el('span', { class: 'vs-ec', text: `${ec > 0 ? '+' : '−'}${fmt(Math.abs(ec))} % en A2` })),
+      el('div', { class: 'vs-row' }, el('span', { text: 'A1' }), el('div', { class: 'cmp-track' }, el('div', { class: 'cmp-fill is-hollow', style: { width: `${r.a / mx * 100}%` } })), el('span', { class: 'vs-v', text: fmt(r.a, d) })),
+      el('div', { class: 'vs-row' }, el('span', { text: 'A2' }), el('div', { class: 'cmp-track' }, el('div', { class: 'cmp-fill', style: { width: `${r.b / mx * 100}%` } })), el('span', { class: 'vs-v', text: fmt(r.b, d) })),
+      el('small', { text: r.s })));
+  }
+  box.append(el('div', { class: 'vs-money' },
+    el('div', {}, el('span', { class: 'kpi-l', text: 'Économie d\'énergie de la variante' }), el('span', { class: 'kpi-v' }, `≈ ${fmt(g.eur)}`, el('small', { text: '€ par an' }))),
+    el('div', {}, el('span', { class: 'kpi-l', text: 'CO₂ évité' }), el('span', { class: 'kpi-v' }, fmt(g.co2 / 1000, 1), el('small', { text: 't par an' })))),
+    el('p', { class: 'vs-why', text: 'Pourquoi : la tour A2 est isolée par l\'extérieur, ventilée en hybride (le moteur n\'aide que si le tirage naturel ne suffit pas) et préchauffe son eau au soleil. Elle compte plus d\'occupants par logement : son eau et son eau chaude ne se comparent pas.' }),
+    el('p', { class: 'vs-why', text: 'Avec une chaleur de réseau peu chère et peu carbonée, le gain reste modeste en euros : la variante se justifie surtout par la RE2020 et le confort.' }),
+    el('ul', { class: 'more-links' }, el('li', {}, el('a', { href: '#cout-global', text: 'Coût de l\'énergie sur 50 ans' })), el('li', {}, el('a', { href: 'comparatif/', text: 'Comparatif complet : travaux, quantités, carbone' }))));
 }
 
 // ------------------------------------------------------------------ alertes
@@ -262,22 +327,32 @@ function renderAlerts() {
   const ol = bind('alerts'); ol.textContent = '';
   const A = S.J.alertes;
   const open = A.filter(a => alertState(a) === 'open').length;
-  bind('alert-count').textContent = `${open} en cours · ${A.length} sur l'année`;
-  for (const a of A) {
+  const nb = bind('alert-n'); nb.textContent = open ? String(open) : ''; nb.hidden = !open;
+  const order = { open: 0, close: 1, future: 2 };
+  const list = [...A].sort((p, q) => order[alertState(p)] - order[alertState(q)] || p.debut.localeCompare(q.debut));
+  for (const a of list) {
     const st = alertState(a); const g = STATUS[a.gravite] || STATUS.attention;
-    const where = S.byId.has(a.cible) ? `Logement ${a.cible}` : a.cible.startsWith('SS-') ? `Sous-station ${a.cible.slice(3)}` : `Extracteur hybride, colonne ${a.colonne}`;
-    const stLabel = st === 'future' ? 'à venir' : st === 'open' ? `détectée le ${fmtDay(dayIndex(a.debut))}` : `résolue le ${fmtDay(dayIndex(a.fin))}`;
-    const b = el('button', { class: 'al' + (st === 'future' ? ' is-future' : ''), type: 'button', style: { '--pc': g.c }, onclick: () => openAlert(a) },
-      icon(TYPE_ICON[a.type] || g.icon),
-      el('span', {}, el('span', { class: 'al-t', text: a.titre }),
-        el('span', { class: 'al-m' }, el('span', { class: 'al-st' + (st === 'close' ? ' is-done' : ''), text: st === 'close' ? 'Résolue' : g.label }), el('span', { text: `${where} · ${stLabel}` }))));
-    ol.append(el('li', {}, b));
+    const when = st === 'future' ? `à partir du ${fmtDay(dayIndex(a.debut))}` : st === 'open' ? `depuis le ${fmtDay(dayIndex(a.debut))}` : `réglé le ${fmtDay(dayIndex(a.fin))}`;
+    const badge = st === 'open' ? 'En cours' : st === 'close' ? 'Réglé' : 'Plus tard';
+    ol.append(el('li', {}, el('article', { class: `al al-${st}`, style: { '--pc': g.c } },
+      el('header', {}, icon(TYPE_ICON[a.type] || g.icon), el('h3', { text: a.titre_simple || a.titre })),
+      el('p', { class: 'al-m' }, el('span', { class: 'al-st', text: badge }), ` ${when}${a.cout_eur ? ` · coût ≈ ${fmt(a.cout_eur)} €` : ''}`),
+      el('p', { class: 'al-r', text: a.resume || a.cause }),
+      el('p', { class: 'al-f' }, el('b', { text: 'À faire : ' }), a.faire || a.action),
+      el('button', { class: 'chip', type: 'button', onclick: () => openAlert(a) }, icon('i-target'), 'Voir sur la maquette'))));
   }
 }
-function openAlert(a) {
+function openAlert(a, panel = true) {
   stop();
   const t = alertTarget(a);
-  if (S.period !== 'an') setDay(dayIndex(a.debut) + 2);
+  setUsage(a.type === 'eau' ? 'eau' : 'chauffage');
+  setMonth(monthOf(Math.min(S.ND - 1, dayIndex(a.debut) + 2)));
+  if (!panel) {
+    if (t.kind === 'logement') { setFloor(0, false); S.twin.markElement(null); S.twin.select(t.id, true); }
+    else if (t.kind === 'ss') { S.twin.select(null); S.twin.markElement(null); S.twin.focusPoint(S.twin.towerBase(t.tour).setY(8), 70); }
+    else { S.twin.select(null); const p = S.twin.markElement(t.revit); S.twin.focusPoint(p || S.twin.roofOf('A2'), 48); }
+    return;
+  }
   if (t.kind === 'logement') { setFloor(0, false); selectLogement(t.id, true); }
   else if (t.kind === 'ss') { S.twin.select(null); S.twin.markElement(null); S.twin.focusPoint(S.twin.towerBase(t.tour).setY(8), 70); showSpecial({ kind: 'ss', tour: t.tour, alerte: a }); }
   else { S.twin.select(null); const p = S.twin.markElement(t.revit); S.twin.focusPoint(p || S.twin.roofOf('A2'), 48); showSpecial({ kind: 'vhy', colonne: t.colonne, alerte: a }); }
@@ -341,96 +416,42 @@ function updatePins(project) {
   }
 }
 
-// ------------------------------------------------------------------ frise
-const TL = { w: 0, h: 88, padL: 0, padR: 0 };
-function tlScope() {
-  if (S.sel) { const l = S.byId.get(S.sel); return { label: `Logement ${l.id}`, h: l.d.h, e: l.d.e }; }
-  const zs = scopeTowers();
-  const h = new Float64Array(S.ND), e = new Float64Array(S.ND);
-  for (const l of S.L) if (zs.includes(l.tour)) for (let d = 0; d < S.ND; d++) { h[d] += l.d.h[d]; e[d] += l.d.e[d]; }
-  return { label: S.tower === 'ALL' ? 'Deux tours' : `Tour ${S.tower}`, h, e };
+// ------------------------------------------------------------------ mois
+function setMonth(i) {
+  const [a, b] = monthRanges()[Math.max(0, Math.min(monthRanges().length - 1, i))];
+  S.period = 'mois';
+  setDay(Math.min(b, a + 14));
+  renderTimeline();
 }
 function renderTimeline() {
-  const host = bind('tl-chart'); host.textContent = '';
-  const W = host.clientWidth || 800, H = host.clientHeight || 88;
-  TL.w = W; TL.h = H;
-  const sc = tlScope();
-  const top = 12, stripH = 9, stripY = H - 22, base = stripY - 6;
-  const mx = Math.max(...sc.h.map((v, i) => v + sc.e[i])) * 1.08 || 1;
-  const x = (d) => (d / (S.ND - 1)) * W;
-  const y = (v) => base - (v / mx) * (base - top);
-  const svg = sv('svg', { viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: 'none', role: 'img', 'aria-label': `Consommation quotidienne de chauffage et d'eau chaude, ${sc.label}` });
-  // mois
-  for (const [a, b] of monthRanges()) {
-    svg.append(sv('line', { x1: x(a), x2: x(a), y1: top - 6, y2: H - 2, stroke: 'rgba(176,196,214,.10)' }));
-    const m = S.days[a].getMonth();
-    svg.append(sv('text', { x: x((a + b) / 2), y: H - 1, 'text-anchor': 'middle', 'font-size': 10.5, fill: '#85919a' }, MOIS[m] + (m === 0 ? ` ${S.days[a].getFullYear()}` : '')));
-  }
-  // aires empilées : chauffage puis eau chaude, écart de 2 px
-  const path = (lo, hi) => {
-    let d = `M${x(0)},${y(hi(0))}`;
-    for (let i = 1; i < S.ND; i++) d += `L${x(i)},${y(hi(i))}`;
-    for (let i = S.ND - 1; i >= 0; i--) d += `L${x(i)},${y(lo(i))}`;
-    return d + 'Z';
-  };
-  svg.append(sv('path', { d: path(() => 0, i => sc.h[i]), fill: '#d95926', opacity: 0.92 }));
-  svg.append(sv('path', { d: path(i => sc.h[i], i => sc.h[i] + sc.e[i]), fill: '#3987e5', opacity: 0.92, stroke: '#11171c', 'stroke-width': 1.2 }));
-  svg.append(sv('line', { x1: 0, x2: W, y1: base, y2: base, stroke: 'rgba(176,196,214,.25)' }));
-  // bande de température (couleur seule, pas de second axe)
-  const T = S.J.meteo.temperature;
-  for (let i = 0; i < S.ND; i++) {
-    const t = Math.max(-1, Math.min(1, (T[i] - 13) / 13));
-    const c = rampAt(DIVERGE, (t + 1) / 2);
-    svg.append(sv('rect', { x: x(i), y: stripY, width: Math.max(1, W / S.ND + 0.4), height: stripH, fill: `rgb(${c})` }));
-  }
-  // alertes
-  for (const a of S.J.alertes) {
-    const d = dayIndex(a.debut); const g = STATUS[a.gravite] || STATUS.attention;
-    svg.append(sv('path', { d: `M${x(d)},${top - 2} l4,-5 l-4,-5 l-4,5z`, fill: g.c, stroke: '#0a0e12', 'stroke-width': 1 }));
-  }
-  // période et curseur
-  const [a, b] = range();
-  svg.append(sv('rect', { x: x(a), y: top - 6, width: Math.max(2, x(b) - x(a)), height: H - top - 10, fill: 'rgba(238,241,242,.06)', stroke: 'rgba(238,241,242,.18)', 'data-k': 'win' }));
-  const cur = sv('g', { 'data-k': 'cur' });
-  cur.append(sv('line', { x1: x(S.day), x2: x(S.day), y1: top - 8, y2: H - 14, stroke: '#ff3d8b', 'stroke-width': 2 }));
-  cur.append(sv('circle', { cx: x(S.day), cy: top - 8, r: 4.5, fill: '#ff3d8b', stroke: '#0a0e12', 'stroke-width': 1.5 }));
-  svg.append(cur);
-  host.append(svg);
-  const tip = el('div', { class: 'chart-tip', hidden: true }); host.append(tip);
-  host._x = x; host._tip = tip; host._sc = sc;
-  host.setAttribute('aria-valuenow', S.day); host.setAttribute('aria-valuetext', fmtDay(S.day, true));
+  const host = bind('months'); if (!host) return; host.textContent = '';
+  const zs = scopeTowers();
+  const M = monthRanges();
+  const vals = M.map(([a, b]) => zs.reduce((s, z) => s + sumT(z, 'mta', a, b), 0));
+  const mx = Math.max(...vals) || 1;
+  const cur = S.period === 'an' ? -1 : monthOf(S.day);
+  M.forEach(([a, b], i) => {
+    const x = S.days[a]; const m = x.getMonth();
+    const al = S.J.alertes.filter(q => { const d = dayIndex(q.debut); return d >= a && d <= b; });
+    const btn = el('button', { type: 'button', class: 'mo' + (i === cur ? ' is-on' : '') + (S.playing && i === cur ? ' is-live' : ''), 'aria-pressed': String(i === cur),
+      'aria-label': `${MOIS_L[m]} ${x.getFullYear()}${al.length ? `, ${al.length} problème${al.length > 1 ? 's' : ''} détecté${al.length > 1 ? 's' : ''}` : ''}`,
+      onclick: () => { stop(); setMonth(i); } },
+      el('span', { class: 'mo-bar' }, el('i', { style: { height: `${Math.max(6, vals[i] / mx * 100)}%` } })),
+      el('span', { class: 'mo-l', text: MOIS[m].replace('.', '') }),
+      el('span', { class: 'mo-y', text: m === 0 || i === 0 ? String(x.getFullYear()) : '' }),
+      el('span', { class: 'mo-dots' }, ...al.map(q => el('i', { style: { background: (STATUS[q.gravite] || STATUS.attention).c } }))));
+    host.append(btn);
+  });
+  host.append(el('button', { type: 'button', class: 'mo mo-an' + (S.period === 'an' ? ' is-on' : ''), 'aria-pressed': String(S.period === 'an'),
+    onclick: () => { stop(); setPeriod('an'); } }, el('span', { class: 'mo-l', text: 'Toute l\'année' })));
 }
 function moveCursor() {
-  const host = bind('tl-chart'); const x = host._x; if (!x) return;
-  const g = host.querySelector('[data-k="cur"]');
-  g.children[0].setAttribute('x1', x(S.day)); g.children[0].setAttribute('x2', x(S.day)); g.children[1].setAttribute('cx', x(S.day));
-  const [a, b] = range(); const w = host.querySelector('[data-k="win"]');
-  w.setAttribute('x', x(a)); w.setAttribute('width', Math.max(2, x(b) - x(a)));
-  host.setAttribute('aria-valuenow', S.day); host.setAttribute('aria-valuetext', fmtDay(S.day, true));
+  const host = bind('months'); if (!host) return;
+  const cur = S.period === 'an' ? -1 : monthOf(S.day);
+  [...host.querySelectorAll('.mo:not(.mo-an)')].forEach((b, i) => { b.classList.toggle('is-on', i === cur); b.classList.toggle('is-live', S.playing && i === cur); b.setAttribute('aria-pressed', String(i === cur)); });
+  const an = host.querySelector('.mo-an'); if (an) { an.classList.toggle('is-on', S.period === 'an'); an.setAttribute('aria-pressed', String(S.period === 'an')); }
 }
-function wireTimeline() {
-  const host = bind('tl-chart');
-  const dayAt = (e) => { const r = host.getBoundingClientRect(); return Math.max(0, Math.min(S.ND - 1, Math.round((e.clientX - r.left) / r.width * (S.ND - 1)))); };
-  let drag = false;
-  host.addEventListener('pointerdown', (e) => { drag = true; host.setPointerCapture(e.pointerId); stop(); if (S.period === 'an') setPeriod('jour'); setDay(dayAt(e)); });
-  host.addEventListener('pointermove', (e) => {
-    const d = dayAt(e);
-    if (drag) setDay(d);
-    const tip = host._tip, sc = host._sc; if (!tip) return;
-    tip.hidden = false; tip.style.left = `${host._x(d)}px`; tip.style.top = '6px';
-    tip.innerHTML = `<b>${fmtDay(d)}</b> · ${fmt(S.J.meteo.temperature[d], 1)} °C<br><span class="sw" style="background:#d95926"></span>Chauffage ${fmt(sc.h[d])} kWh &nbsp;<span class="sw" style="background:#3987e5"></span>Eau chaude ${fmt(sc.e[d])} kWh`;
-  });
-  host.addEventListener('pointerup', () => { drag = false; });
-  host.addEventListener('pointerleave', () => { if (host._tip) host._tip.hidden = true; });
-  host.addEventListener('keydown', (e) => {
-    const step = e.shiftKey ? 7 : 1;
-    if (e.key === 'ArrowRight') { setDay(Math.min(S.ND - 1, S.day + step)); e.preventDefault(); }
-    else if (e.key === 'ArrowLeft') { setDay(Math.max(0, S.day - step)); e.preventDefault(); }
-    else if (e.key === 'Home') { setDay(0); e.preventDefault(); } else if (e.key === 'End') { setDay(S.ND - 1); e.preventDefault(); }
-    else if (e.key === ' ') { toggle(); e.preventDefault(); }
-  });
-  new ResizeObserver(() => renderTimeline()).observe(host);
-}
+function wireTimeline() {}
 
 // ------------------------------------------------------------------ lecture de l'année
 let raf = 0, last = 0, acc = 0;
@@ -453,28 +474,36 @@ function play() {
 function stop() {
   if (!S.playing) return;
   S.playing = false; cancelAnimationFrame(raf);
-  const b = $('[data-act="play"]'); b.classList.remove('is-playing'); b.firstChild.firstChild.setAttribute('href', '#i-play'); b.setAttribute('aria-label', "Lire l'année");
-  renderAlerts();
+  const b = $('[data-act="play"]'); b.classList.remove('is-playing'); b.firstChild.firstChild.setAttribute('href', '#i-play'); b.setAttribute('aria-label', "Faire défiler l'année jour par jour");
+  if (S.period === 'jour') setPeriod('mois'); else renderAlerts();
 }
 
 // ------------------------------------------------------------------ état et mises à jour
 function setDay(d) {
   S.day = d;
-  bind('date-day').textContent = S.period === 'an' && !S.playing ? 'Oct. 2027 – sept. 2028' : fmtDay(d);
-  bind('date-temp').textContent = S.period === 'an' && !S.playing ? '' : `${fmt(S.J.meteo.temperature[d], 1)} °C dehors`;
+  const T = S.J.meteo.temperature;
+  if (S.period === 'an' && !S.playing) { bind('date-day').textContent = 'Oct. 2027 – sept. 2028'; bind('date-temp').textContent = 'Toute l\'année'; }
+  else if (S.period === 'mois' && !S.playing) {
+    const [a, b] = range(); let s = 0; for (let i = a; i <= b; i++) s += T[i];
+    bind('date-day').textContent = monthName(d); bind('date-temp').textContent = `${fmt(s / (b - a + 1), 1)} °C en moyenne dehors`;
+  } else { bind('date-day').textContent = fmtDay(d); bind('date-temp').textContent = `${fmt(T[d], 1)} °C dehors`; }
   paint(); renderKpis(); renderCmp(); moveCursor();
   if (!S.playing || d % 4 === 0) renderAlerts();
   if (S.sel && !S.playing) renderDetail();
 }
 function setPeriod(p, refresh = true) {
   S.period = p;
-  $$('[data-period]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.period === p)));
-  if (refresh) { setDay(S.day); renderTimeline(); }
+  if (refresh) { setDay(S.day); moveCursor(); }
 }
 function setUsage(u) {
   S.usage = u;
   $$('[data-usage]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.usage === u)));
-  paint(); renderCmp(); if (S.sel) renderDetail();
+  paint(); renderKpis(); if (S.sel) renderDetail();
+}
+function setTab(name, focus = false) {
+  $$('[data-tab]').forEach(b => { const on = b.dataset.tab === name; b.setAttribute('aria-selected', String(on)); b.tabIndex = on ? 0 : -1; if (on && focus) b.focus(); });
+  $$('[data-pane]').forEach(p => { p.hidden = p.dataset.pane !== name; });
+  S.tab = name;
 }
 function setFloor(n, fly = true) {
   S.floor = n;
@@ -538,14 +567,14 @@ function monthlyBars(l) {
     svg.append(g);
     svg.append(sv('text', { x: i * bw + bw / 2, y: H - 5, 'text-anchor': 'middle', 'font-size': 10, fill: '#85919a' }, MOIS[v.m].replace('.', '')));
     const show = () => { tip.hidden = false; tip.style.left = `${((i + 0.5) / 12) * 100}%`; tip.style.top = `${(y(v.h + v.e) / H) * 100}%`;
-      tip.innerHTML = `<b>${MOIS_L[v.m]}</b><br><span class="sw" style="background:#d95926"></span>Chauffage ${fmt(v.h)} kWh<br><span class="sw" style="background:#3987e5"></span>Eau chaude ${fmt(v.e)} kWh<br>Référence chauffage ${fmt(v.r)} kWh`; };
+      tip.innerHTML = `<b>${MOIS_L[v.m]}</b><br><span class="sw" style="background:#d95926"></span>Chauffage ${fmt(v.h)} kWh<br><span class="sw" style="background:#3987e5"></span>Eau chaude ${fmt(v.e)} kWh<br>Logements semblables ${fmt(v.r)} kWh`; };
     g.addEventListener('pointerenter', show); g.addEventListener('focus', show);
     g.addEventListener('pointerleave', () => { tip.hidden = true; }); g.addEventListener('blur', () => { tip.hidden = true; });
   });
   wrap.append(svg, tip);
   return el('div', {}, wrap, el('div', { class: 'key' },
     el('span', {}, el('i', { style: { background: '#d95926' } }), 'Chauffage'), el('span', {}, el('i', { style: { background: '#3987e5' } }), 'Eau chaude'),
-    el('span', {}, el('i', { class: 'line', style: { background: '#eef1f2' } }), 'Référence recalée')));
+    el('span', {}, el('i', { class: 'line', style: { background: '#eef1f2' } }), 'Logements semblables (chauffage)')));
 }
 function alertCard(a) {
   const g = STATUS[a.gravite] || STATUS.attention;
@@ -553,12 +582,15 @@ function alertCard(a) {
   const per = a.fin ? `du ${fmtDay(d)} au ${fmtDay(dayIndex(a.fin))}` : `depuis le ${fmtDay(d)}`;
   const rule = S.J.regles.find(r => r.id === a.regle);
   return el('div', { class: 'alert-card', style: { '--pc': g.c } },
-    el('h4', {}, icon(TYPE_ICON[a.type] || g.icon), a.titre),
+    el('h4', {}, icon(TYPE_ICON[a.type] || g.icon), a.titre_simple || a.titre),
     el('p', {}, el('b', { text: `${g.label} · ` }), per),
-    el('p', {}, el('b', { text: 'Cause probable : ' }), a.cause),
-    el('p', {}, el('b', { text: 'Action : ' }), a.action),
+    el('p', { text: a.resume || a.cause }),
+    el('p', {}, el('b', { text: 'À faire : ' }), a.faire || a.action),
     a.cout_eur ? el('p', {}, el('b', { text: 'Coût estimé : ' }), `${fmt(a.cout_eur)} € TTC`) : null,
-    rule ? el('p', {}, el('b', { text: `Règle ${rule.id} : ` }), rule.texte) : null,
+    el('details', { class: 'more more-al' }, el('summary', { text: 'Détail technique' }),
+      el('p', {}, el('b', { text: 'Cause probable : ' }), a.cause),
+      el('p', {}, el('b', { text: 'Action : ' }), a.action),
+      rule ? el('p', {}, el('b', { text: `Règle ${rule.id} : ` }), rule.texte) : null),
     el('div', { class: 'tagline' }, el('span', { class: 'tag tag-fic', text: 'Anomalie simulée' }), el('span', { class: 'tag', text: 'Détection automatique' })));
 }
 function renderDetail() {
@@ -566,46 +598,58 @@ function renderDetail() {
   if (S.special) return renderSpecial(box);
   const l = S.byId.get(S.sel); if (!l) return;
   const [a, b] = range();
-  const U = USAGE[S.usage];
-  const v = valueOf(l); const e = ecartOf(l);
-  const unit = (S.usage === 'eau' ? 'L/m²' : 'kWh/m²') + (S.period === 'jour' ? ' par jour' : '');
-  const dcls = Math.abs(e) < 0.05 ? 'flat' : e > 0 ? 'up' : 'down';
+  const U = USAGE[S.usage]; const k = U.key;
+  const e = ecartOf(l); const g = lightOf(l); const G = LIGHTS[g];
   const tours = { A1: 'Tour A1 · COGEDIM', A2: 'Tour A2 · CDC Habitat' };
   const em = new Date(l.emmenagement + 'T12:00:00');
   const H = S.hyp;
-  const an = (k) => sumL(l, k, 0, S.ND - 1);
-  const coutAn = (an('h') + an('e')) / 1000 * H.prix_chaleur + an('p') * H.prix_elec + H.abo_elec + an('w') / 1000 * H.prix_eau;
+  const an = (kk) => sumL(l, kk, 0, S.ND - 1);
+  const per = (kk) => sumL(l, kk, a, b);
+  const facture = (f) => euros('h', f('h')) + euros('e', f('e')) + euros('w', f('w')) + euros('p', f('p'));
+  const coutAn = facture(an) + H.abo_elec;
+  const coutPer = facture(per) + H.abo_elec * (b - a + 1) / S.ND;
   const co2An = (an('h') + an('e')) * H.co2_chaleur + an('p') * H.co2_elec;
   const alerts = S.J.alertes.filter(x => x.cible === l.id);
   const miss = l.miss.reduce((s, x) => s + x, 0);
+  const quand = S.period === 'an' ? 'Sur l\'année' : S.period === 'mois' ? `En ${periodLabel()}` : `Cette semaine-là (jusqu'au ${fmtDay(S.day)})`;
+  const qte = per(k);
+  const qteTxt = k === 'w' ? `${fmt(qte / 1000, 1)} m³ d'eau` : `${fmt(qte)} kWh ${S.usage === 'chauffage' ? 'de chauffage' : S.usage === 'ecs' ? 'd\'eau chaude' : 'd\'électricité'}`;
+  const comp = S.usage === 'chauffage' ? 'des logements semblables (même taille, même étage, même orientation, même météo)' : S.usage === 'elec' ? `les logements de la tour qui comptent aussi ${l.occupants} occupant${l.occupants > 1 ? 's' : ''}` : 'la moyenne de la tour, par occupant';
+  const phrase = g === 'vide'
+    ? `${quand}, le logement n'est pas encore habité (emménagement le ${em.getDate()} ${MOIS_L[em.getMonth()]} ${em.getFullYear()}).`
+    : `${quand}, ce logement a consommé ${qteTxt}, soit ≈ ${fmt(euros(k, qte))} €. C'est ${Math.abs(e) < 0.05 ? 'autant que' : `${fmt(Math.abs(e) * 100)} % de ${e > 0 ? 'plus' : 'moins'} que`} ${comp}.`;
+  const orient = ORIENT[l.orient] || l.orient;
   box.append(...[
-    el('p', { class: 'dt-eyebrow', text: `${tours[l.tour]} · R+${l.etage} · façade ${l.orient}` }),
-    el('h2', { class: 'dt-title', text: l.id }),
-    el('p', { class: 'dt-sub', text: `${l.typo} · ${fmt(l.shab, 2)} m²${l.ext ? ` + ${fmt(l.ext, 2)} m² extérieurs` : ''} · ${l.occupants} occupant${l.occupants > 1 ? 's' : ''} · emménagement ${em.getDate()} ${MOIS[em.getMonth()]} ${em.getFullYear()}` }),
-    el('div', { class: 'dt-hero', style: { '--uc': `var(${U.css})` } }, el('span', { class: 'big', text: fmt(v, v < 10 ? 2 : 1) }), el('span', { class: 'unit', text: `${unit} · ${U.label.toLowerCase()}` }),
-      el('span', { class: `delta ${dcls}`, text: `${e > 0 ? '+' : ''}${fmt(e * 100, 0)} %` })),
-    el('p', { class: 'dt-note', text: `${periodLabel()} · écart ${S.usage === 'chauffage' ? 'à la référence recalée (météo, orientation, étage, typologie)' : `à la médiane des ${l.typo.slice(0, 2)} de la tour`}.` }),
-    alerts.length ? el('div', { class: 'dt-section' }, el('h3', { text: 'Alertes' }), ...alerts.map(alertCard)) : null,
+    el('p', { class: 'dt-eyebrow', text: `${tours[l.tour]} · ${etageLabel(l.etage)} · façade ${orient}` }),
+    el('h2', { class: 'dt-title', text: `Logement ${l.id}` }),
+    el('p', { class: 'dt-sub', text: `${l.typo} · ${fmt(l.shab, 0)} m² · ${l.occupants} occupant${l.occupants > 1 ? 's' : ''}` }),
+    el('p', { class: 'dt-light', style: { '--lc': G.c } }, el('i'), el('b', { text: G.label }), g !== 'vide' && Math.abs(e) >= 0.05 ? el('span', { text: `${e > 0 ? '+' : '−'}${fmt(Math.abs(e) * 100)} %` }) : null),
+    el('p', { class: 'dt-phrase', text: phrase }),
+    alerts.length ? el('div', { class: 'dt-section' }, el('h3', { text: 'Problème détecté' }), ...alerts.map(alertCard)) : null,
+    el('div', { class: 'dt-grid' },
+      S.period === 'an' ? null : el('div', { class: 'mini' }, el('span', { class: 'ml', text: S.period === 'mois' ? 'Facture du mois' : 'Facture de la semaine' }), el('div', { class: 'mv', text: `${fmt(coutPer)} €` }), el('div', { class: 'ms', text: 'Énergie et eau, abonnement compris' })),
+      el('div', { class: 'mini' }, el('span', { class: 'ml', text: 'Facture de l\'année' }), el('div', { class: 'mv', text: `${fmt(coutAn)} €` }), el('div', { class: 'ms', text: `${fmt(coutAn / 12)} € par mois en moyenne` }))),
     el('div', { class: 'dt-section' }, el('h3', { text: 'Mois par mois' }), monthlyBars(l)),
-    el('div', { class: 'dt-section' }, el('h3', { text: 'Sur l\'année' }),
-      el('div', { class: 'dt-grid' },
-        ...['chauffage', 'ecs', 'eau', 'elec'].map(u => {
-          const K = USAGE[u]; const s = an(K.key);
-          const val = u === 'eau' ? `${fmt(s / 1000, 1)} m³` : `${fmt(s)} kWh`;
-          const sub = u === 'eau' ? `${fmt(s / l.occupants / S.ND)} L/hab./j` : `${fmt(s / l.shab, 1)} kWh/m²`;
-          return el('div', { class: 'mini', style: { '--uc': `var(${K.css})` } }, el('span', { class: 'ml' }, icon(K.icon), K.label), el('div', { class: 'mv', text: val }), el('div', { class: 'ms', text: sub }));
-        }),
-        el('div', { class: 'mini' }, el('span', { class: 'ml', text: 'Facture énergie et eau' }), el('div', { class: 'mv', text: `${fmt(coutAn)} €` }), el('div', { class: 'ms', text: 'TTC, abonnement électrique compris' })),
-        el('div', { class: 'mini' }, el('span', { class: 'ml', text: 'Émissions' }), el('div', { class: 'mv', text: `${fmt(co2An)} kg CO₂e` }), el('div', { class: 'ms', text: `${fmt(co2An / l.shab, 1)} kg/m²` })))),
-    el('div', { class: 'dt-section' }, el('h3', { text: 'Comptage' }),
-      el('dl', { class: 'facts' },
-        el('dt', { text: 'Module' }), el('dd', { text: 'Module thermique d\'appartement Uponor Combi Port : chauffage, eau chaude et eau froide comptés séparément (CCTP 502 §5.5.1)' }),
-        el('dt', { text: 'Relève' }), el('dd', { text: miss ? `Quotidienne ; ${miss} jours sans donnée, estimés` : 'Quotidienne, par radio' }),
-        el('dt', { text: 'Ventilation' }), el('dd', { text: l.tour === 'A1' ? 'VMC simple flux hygroréglable B' : 'Ventilation hybride hygroréglable B (variante A2)' }),
-        el('dt', { text: 'Plan' }), el('dd', { text: `${l.plan} (tableau des surfaces ind. A)` })),
-      el('div', { class: 'tagline' }, el('span', { class: 'tag tag-real', text: 'Typologie, surface, position : DCE et maquette' }), el('span', { class: 'tag tag-fic', text: 'Consommations simulées' }))),
-    equipementsBlock(l),
-    ouvragesBlock(l),
+    el('details', { class: 'more more-dt' }, el('summary', { text: 'Pour aller plus loin' }),
+      el('div', { class: 'dt-section' }, el('h3', { text: 'Sur l\'année' }),
+        el('div', { class: 'dt-grid' },
+          ...['chauffage', 'ecs', 'eau', 'elec'].map(u => {
+            const K = USAGE[u]; const s = an(K.key);
+            const val = u === 'eau' ? `${fmt(s / 1000, 1)} m³` : `${fmt(s)} kWh`;
+            const sub = u === 'eau' ? `${fmt(s / l.occupants / S.ND)} L par personne et par jour` : `${fmt(s / l.shab, 1)} kWh/m² · ${fmt(euros(K.key, s))} €`;
+            return el('div', { class: 'mini', style: { '--uc': `var(${K.css})` } }, el('span', { class: 'ml' }, icon(K.icon), K.label), el('div', { class: 'mv', text: val }), el('div', { class: 'ms', text: sub }));
+          }),
+          el('div', { class: 'mini' }, el('span', { class: 'ml', text: 'Émissions' }), el('div', { class: 'mv', text: `${fmt(co2An)} kg CO₂e` }), el('div', { class: 'ms', text: `${fmt(co2An / l.shab, 1)} kg/m²` })),
+          el('div', { class: 'mini' }, el('span', { class: 'ml', text: 'Emménagement' }), el('div', { class: 'mv', text: `${em.getDate()} ${MOIS[em.getMonth()]} ${em.getFullYear()}` }), el('div', { class: 'ms', text: l.ext ? `${fmt(l.ext, 1)} m² extérieurs` : '' })))),
+      el('div', { class: 'dt-section' }, el('h3', { text: 'Comptage' }),
+        el('dl', { class: 'facts' },
+          el('dt', { text: 'Compteur' }), el('dd', { text: 'Module thermique Uponor Combi Port : chauffage, eau chaude et eau froide comptés séparément (CCTP 502 §5.5.1)' }),
+          el('dt', { text: 'Relevé' }), el('dd', { text: miss ? `Chaque jour, par radio ; ${miss} jours sans donnée, estimés` : 'Chaque jour, par radio' }),
+          el('dt', { text: 'Ventilation' }), el('dd', { text: l.tour === 'A1' ? 'VMC simple flux hygroréglable B' : 'Ventilation hybride hygroréglable B (variante A2)' }),
+          el('dt', { text: 'Plan' }), el('dd', { text: `${l.plan} (tableau des surfaces ind. A)` })),
+        el('div', { class: 'tagline' }, el('span', { class: 'tag tag-real', text: 'Typologie, surface, position : DCE et maquette' }), el('span', { class: 'tag tag-fic', text: 'Consommations simulées' }))),
+      equipementsBlock(l),
+      ouvragesBlock(l)),
   ].filter(Boolean));
 }
 // équipements prévus au CCTP (non modélisés), dénombrés d'après les plans CVC des logements types
@@ -778,7 +822,7 @@ function renderCoutGlobal() {
   if (!form.childElementCount) {
     const H = S.J.hypotheses;
     const field = (k, step, label, hint, isHyp) => el('label', { class: isHyp ? 'is-hyp' : '' }, el('span', {}, label, el('small', { text: hint })),
-      el('input', { type: 'number', step, value: S.hyp[k], 'data-k': k, inputmode: 'decimal', oninput: (e) => { const v = parseFloat(e.target.value); if (isFinite(v)) { S.hyp[k] = v; renderCoutGlobal(); renderKpis(); } } }));
+      el('input', { type: 'number', step, value: S.hyp[k], 'data-k': k, inputmode: 'decimal', oninput: (e) => { const v = parseFloat(e.target.value); if (isFinite(v)) { S.hyp[k] = v; S._cmpDirty = true; renderCoutGlobal(); renderKpis(); renderCmp(); } } }));
     form.append(el('h3', { text: 'Prix (sources publiques)' }),
       field('prix_chaleur', 0.01, 'Chaleur du réseau, € TTC/MWh', 'Hauts de Garonne, prix moyen 2023'),
       field('prix_elec', 0.0001, 'Électricité, € TTC/kWh', 'Tarif réglementé Base 6 kVA'),
@@ -843,6 +887,69 @@ function renderCoutGlobal() {
   );
 }
 
+// ------------------------------------------------------------------ présentation en 5 étapes
+function tourSteps() {
+  const J = S.J, A = (id) => J.alertes.find(a => a.id === id);
+  const T = J.meteo.temperature;
+  const jan = monthRanges().findIndex(([a]) => S.days[a].getMonth() === 0);
+  const [ja, jb] = monthRanges()[jan];
+  let tmin = Infinity; for (let i = ja; i <= jb + 10 && i < S.ND; i++) tmin = Math.min(tmin, T[i]);
+  const last = S.ND - 1;
+  const per = (z, k) => S.L.filter(l => l.tour === z).reduce((s, l) => s + sumL(l, k, 0, last), 0) / J.tours[z].shab;
+  const vent = (z) => sumT(z, 'ventilation', 0, last) / J.tours[z].shab;
+  const dH = (1 - per('A2', 'h') / per('A1', 'h')) * 100, rV = vent('A1') / vent('A2');
+  const g = variantGain();
+  const a145 = A('CH-A1.45'), a173 = A('EA-A1.73'), avhy = J.alertes.find(a => a.type === 'ventilation');
+  const x145 = (a145?.titre.match(/×([\d,]+)/) || [])[1] || '2,6';
+  return [
+    { t: 'Une année dans les deux tours',
+      p: 'Chaque fenêtre éclairée est un logement. Chaque jour, le jumeau lit les compteurs déjà prévus au marché (chauffage, eau chaude, eau, électricité) et colore le logement : vert s\'il consomme comme des logements semblables, orange ou rouge s\'il consomme plus.',
+      go: () => { closeDetail(); setTab('etat'); setUsage('chauffage'); setColor('statut'); setTower('ALL'); setFloor(0, false); S.twin.markElement(null); S.twin.reset(); S.day = 0; play(); } },
+    a145 && { t: 'La vague de froid de janvier',
+      p: `Fin janvier, il fait jusqu'à ${fmt(tmin, 1)} °C. Presque tous les logements restent verts : ils chauffent davantage, mais comme leurs voisins. Le logement A1.45, lui, chauffe ${x145} fois plus : une fenêtre restée ouverte. Le jumeau le signale dès le ${fmtDay(dayIndex(a145.debut))}.`,
+      go: () => { setTab('alertes'); openAlert(a145, wide()); } },
+    a173 && { t: 'Une fuite d\'eau détectée',
+      p: `En mars, le compteur d'eau du logement A1.73 indique presque le double d'habitude, même la nuit. Le jumeau prévient au bout de 5 jours : ${fmt(a173.volume_l / 1000, 1)} m³ perdus, soit ${fmt(a173.cout_eur)} €. Sans lui, on l'aurait découvert sur la facture, des mois plus tard.`,
+      go: () => { setTab('alertes'); openAlert(a173, wide()); } },
+    avhy && { t: 'Une panne que personne ne voit',
+      p: `Sur la tour A2, l'extracteur de ventilation de la colonne ${avhy.colonne} ne repasse plus en tirage naturel. L'air est bien renouvelé, personne ne se plaint… mais il consomme ${String(avhy.ratio).replace('.', ',')} fois plus que les huit autres et sur-ventile la colonne en plein hiver. Le jumeau le repère en comparant les extracteurs entre eux.`,
+      go: () => { setTab('alertes'); openAlert(avhy, wide()); } },
+    { t: 'Tour A1 ou tour A2 ?',
+      p: `Sur l'année, la tour A2 (variante du groupe) chauffe ${fmt(dH)} % de moins par m² que la tour A1 (DCE), et ses ventilateurs consomment ${fmt(rV, 1)} fois moins. Avec une chaleur de réseau peu chère et peu carbonée, l'économie reste modeste : ≈ ${fmt(g.eur)} € par an. La variante se justifie surtout par la RE2020 et le confort.`,
+      go: () => { stop(); closeDetail(); S.twin.markElement(null); setUsage('chauffage'); setPeriod('an'); setTab('cmp'); setTower('ALL'); S.twin.reset(); } },
+  ].filter(Boolean);
+}
+const wide = () => window.innerWidth > 900;
+function tourShow(i) {
+  const steps = S.tourSteps; if (!steps) return;
+  S.tourI = Math.max(0, Math.min(steps.length - 1, i));
+  const st = steps[S.tourI];
+  bind('tour-n').textContent = `Étape ${S.tourI + 1} sur ${steps.length}`;
+  bind('tour-t').textContent = st.t; bind('tour-p').textContent = st.p;
+  const dots = bind('tour-dots'); dots.textContent = '';
+  steps.forEach((_, k) => dots.append(el('i', { class: k === S.tourI ? 'is-on' : '' })));
+  $('[data-act="tour-prev"]').disabled = S.tourI === 0;
+  $('[data-act="tour-next"]').textContent = S.tourI === steps.length - 1 ? 'Terminer' : 'Suivant';
+  stop();
+  st.go();
+}
+function tourStart() {
+  S.tourSteps = tourSteps();
+  bind('tour').hidden = false; document.body.classList.add('in-tour');
+  if (!wide()) $('#jumeau').scrollIntoView({ behavior: reduceMotion() ? 'auto' : 'smooth', block: 'start' });
+  tourShow(0);
+}
+function tourEnd() {
+  stop();
+  bind('tour').hidden = true; document.body.classList.remove('in-tour');
+  S.tourSteps = null;
+}
+function setColor(c) {
+  S.color = c;
+  $$('[data-color]').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.color === c)));
+  paint(); renderKpis(); if (S.sel) renderDetail();
+}
+
 // ------------------------------------------------------------------ démarrage
 async function main() {
   const get = (p) => fetch(p, { cache: 'no-cache' }).then(r => { if (!r.ok) throw new Error(p); return r.json(); });
@@ -855,7 +962,7 @@ async function main() {
     const inp = document.querySelector('[data-k="surcout"]');
     if (inp) { inp.value = S.surcout; renderCoutGlobal(); }
   }).catch(() => {});
-  bind('period-label').textContent = `${fmtDay(0)} → ${fmtDay(S.ND - 1)}`;
+  bind('period-label').textContent = `${MOIS[S.days[0].getMonth()]} ${S.days[0].getFullYear()} → ${MOIS[S.days[S.ND - 1].getMonth()]} ${S.days[S.ND - 1].getFullYear()}`;
   renderStory();
   let rsT = 0; let lastW = window.innerWidth;
   window.addEventListener('resize', () => { if (Math.abs(window.innerWidth - lastW) < 40) return; lastW = window.innerWidth; clearTimeout(rsT); rsT = setTimeout(renderStory, 250); });
@@ -871,8 +978,9 @@ async function main() {
       const tip = $('[data-v="tip"]');
       if (!id) { tip.hidden = true; return; }
       const l = S.byId.get(id); const U = USAGE[S.usage];
-      const v = valueOf(l), e = ecartOf(l);
-      tip.innerHTML = `<b>${l.id} · ${l.typo}</b><span>${U.label} : ${fmt(v, v < 10 ? 2 : 1)} ${S.usage === 'eau' ? 'L/m²' : 'kWh/m²'} · ${e > 0 ? '+' : ''}${fmt(e * 100)} %</span>`;
+      const e = ecartOf(l), G = LIGHTS[lightOf(l)];
+      const [a, b] = range(); const q = sumL(l, U.key, a, b);
+      tip.innerHTML = `<b>Logement ${l.id} · ${l.typo}</b><span><i class="tip-dot" style="background:${G.c}"></i>${G.label}${lightOf(l) === 'vide' ? '' : ` · ${e > 0 ? '+' : '−'}${fmt(Math.abs(e) * 100)} %`}</span><span>${U.label} : ${U.key === 'w' ? `${fmt(q / 1000, 1)} m³` : `${fmt(q)} kWh`} · ≈ ${fmt(euros(U.key, q))} €</span>`;
       tip.style.left = `${x}px`; tip.style.top = `${y}px`; tip.hidden = false;
     },
     onFrame: updatePins,
@@ -884,8 +992,16 @@ async function main() {
   if (hint) { const gone = () => hint.classList.add('is-gone'); $('#stage').addEventListener('pointerdown', gone, { once: true }); setTimeout(gone, 7000); }
   // contrôles
   $$('[data-usage]').forEach(b => b.addEventListener('click', () => setUsage(b.dataset.usage)));
-  $$('[data-color]').forEach(b => b.addEventListener('click', () => { S.color = b.dataset.color; $$('[data-color]').forEach(x => x.setAttribute('aria-pressed', String(x === b))); paint(); if (S.sel) renderDetail(); }));
-  $$('[data-period]').forEach(b => b.addEventListener('click', () => { stop(); setPeriod(b.dataset.period); }));
+  $$('[data-color]').forEach(b => b.addEventListener('click', () => setColor(b.dataset.color)));
+  const tabs = $$('[data-tab]');
+  tabs.forEach((b, i) => {
+    b.addEventListener('click', () => setTab(b.dataset.tab));
+    b.addEventListener('keydown', (e) => { const d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0; if (d) { e.preventDefault(); setTab(tabs[(i + d + tabs.length) % tabs.length].dataset.tab, true); } });
+  });
+  $('[data-act="tour"]').addEventListener('click', tourStart);
+  $('[data-act="tour-close"]').addEventListener('click', tourEnd);
+  $('[data-act="tour-prev"]').addEventListener('click', () => tourShow(S.tourI - 1));
+  $('[data-act="tour-next"]').addEventListener('click', () => { if (S.tourI >= S.tourSteps.length - 1) tourEnd(); else tourShow(S.tourI + 1); });
   $$('[data-floor]').forEach(b => b.addEventListener('click', () => setFloor(+b.dataset.floor)));
   $$('[data-tower]').forEach(b => b.addEventListener('click', () => setTower(b.dataset.tower)));
   $('[data-act="play"]').addEventListener('click', toggle);
@@ -902,21 +1018,22 @@ async function main() {
   $('#btn-qr').addEventListener('click', () => { stop(); dq.showModal(); });
   dq.querySelector('[data-close]').addEventListener('click', () => dq.close());
   dq.addEventListener('click', (e) => { if (e.target === dq) dq.close(); });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#detail').hidden) closeDetail(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (S.tourSteps) tourEnd(); else if (!$('#detail').hidden) closeDetail();
+  });
 
   // état initial
-  const d = params.get('d'); if (d) { const i = dayIndex(d); if (i >= 0 && i < S.ND) { S.day = i; S.period = 'jour'; } }
+  const d = params.get('d'); if (d) { const i = dayIndex(d); if (i >= 0 && i < S.ND) S.day = i; }
   const u = params.get('u'); if (u && USAGE[u]) S.usage = u;
-  setPeriod(S.period, false); setUsage(S.usage); setDay(S.day); renderTimeline();
+  setPeriod(S.period, false); setUsage(S.usage); setColor(S.color); setDay(S.day); renderTimeline(); renderAlerts();
   const l = params.get('l');
   if (l && S.byId.has(l)) {
     const lg = S.byId.get(l);
     setTimeout(() => { selectLogement(l, true); }, 900);
     if (lg) S.tower = 'ALL';
-  } else if (!reduceMotion() && !d) {
-    // la ville s'allume : lecture de l'année au premier affichage
-    setTimeout(() => { if (!S.sel && !S.playing && S.day === 112) { S.day = 0; play(); } }, 2400);
   }
+  if (params.has('presentation')) setTimeout(tourStart, 1200);
   document.documentElement.classList.add('ready');
 }
 main().catch((e) => {

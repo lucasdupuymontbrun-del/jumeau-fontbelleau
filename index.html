@@ -72,11 +72,7 @@
         <span class="sd-day" data-bind="date-day">—</span>
         <span class="sd-meta"><span data-bind="date-temp"></span><span data-bind="date-mode"></span></span>
       </div>
-      <div class="legend-ramp" data-bind="legend">
-        <span class="lr-title" data-bind="legend-title">Chauffage, kWh/m²</span>
-        <span class="lr-bar" data-bind="legend-bar"></span>
-        <span class="lr-ticks"><span data-bind="legend-min">0</span><span data-bind="legend-mid"></span><span data-bind="legend-max">—</span></span>
-      </div>
+      <div class="legend-ramp" data-bind="legend" aria-label="Légende des couleurs"></div>
       <div class="floors" role="group" aria-label="Étage affiché">
         <button type="button" data-floor="0" aria-pressed="true" title="Tous les étages">Tout</button>
         <button type="button" data-floor="9">R+9</button><button type="button" data-floor="8">R+8</button>
@@ -90,45 +86,71 @@
         <button type="button" data-tower="A1" aria-pressed="false">A1</button>
         <button type="button" data-tower="A2" aria-pressed="false">A2</button>
         <span class="sep" aria-hidden="true"></span>
-        <button type="button" data-act="plan" aria-pressed="false" title="Vue de dessus de l'étage choisi"><svg class="ico"><use href="#i-plan"/></svg><span>Plan</span></button>
         <button type="button" data-act="reset" title="Vue d'ensemble"><svg class="ico"><use href="#i-target"/></svg><span class="vh-s">Vue d'ensemble</span></button>
         <button type="button" data-act="fullscreen" title="Plein écran"><svg class="ico"><use href="#i-expand"/></svg><span class="vh-s">Plein écran</span></button>
       </div>
     </div>
 
-    <aside class="panel panel-left" aria-label="Indicateurs et réglages">
+    <aside class="panel panel-left" aria-label="Le jumeau en trois questions">
       <div class="pl-head">
-        <p class="eyebrow">Première année d'exploitation · <span data-bind="period-label">1 oct. 2027 → 30 sept. 2028</span></p>
-        <h1 class="pl-title">Chaque logement,<br>chaque jour.</h1>
-        <p class="pl-lead">Les 129 logements de la maquette s'allument selon leur consommation relevée par leur module thermique et leur compteur électrique.</p>
+        <p class="eyebrow">Année 1 d'exploitation · <span data-bind="period-label">1 oct. 2027 → 30 sept. 2028</span></p>
+        <h1 class="pl-title">Jumeau énergétique</h1>
+        <p class="pl-lead">Les 129 logements des deux tours, suivis chaque jour grâce aux compteurs déjà prévus au marché.</p>
+        <button class="btn btn-tour" type="button" data-act="tour"><svg class="ico"><use href="#i-play"/></svg>Présentation en 5 étapes</button>
       </div>
 
-      <div class="ctrl" role="group" aria-label="Usage affiché">
-        <span class="ctrl-label">Usage</span>
-        <div class="usages">
-          <button type="button" data-usage="chauffage" aria-pressed="true"><svg class="ico"><use href="#i-flame"/></svg>Chauffage</button>
-          <button type="button" data-usage="ecs" aria-pressed="false"><svg class="ico"><use href="#i-shower"/></svg>Eau chaude</button>
-          <button type="button" data-usage="eau" aria-pressed="false"><svg class="ico"><use href="#i-drop"/></svg>Eau</button>
-          <button type="button" data-usage="elec" aria-pressed="false"><svg class="ico"><use href="#i-bolt"/></svg>Électricité</button>
-        </div>
-      </div>
-      <div class="ctrl" role="group" aria-label="Couleur des logements">
-        <span class="ctrl-label">Couleur</span>
-        <div class="seg">
-          <button type="button" data-color="intensite" aria-pressed="true">Intensité</button>
-          <button type="button" data-color="ecart" aria-pressed="false">Écart aux comparables</button>
-        </div>
+      <div class="tabs" role="tablist" aria-label="Trois questions">
+        <button type="button" role="tab" id="tab-etat" aria-controls="pane-etat" aria-selected="true" data-tab="etat">Tout va bien ?</button>
+        <button type="button" role="tab" id="tab-alertes" aria-controls="pane-alertes" aria-selected="false" data-tab="alertes" tabindex="-1">Problèmes <span class="tab-n" data-bind="alert-n"></span></button>
+        <button type="button" role="tab" id="tab-cmp" aria-controls="pane-cmp" aria-selected="false" data-tab="cmp" tabindex="-1">A1 ou A2 ?</button>
       </div>
 
-      <div class="kpis" data-bind="kpis" aria-live="polite"></div>
-
-      <div class="cmp" data-bind="cmp"></div>
-
-      <div class="alerts-box">
-        <div class="ab-head"><h2>Alertes</h2><span class="ab-count" data-bind="alert-count"></span></div>
+      <section class="pane" id="pane-etat" role="tabpanel" aria-labelledby="tab-etat" data-pane="etat">
+        <p class="state-line" data-bind="state-line" aria-live="polite"></p>
+        <div class="lights" data-bind="lights"></div>
+        <div class="kpis" data-bind="kpis"></div>
+        <p class="pane-tip">Touchez un logement pour ouvrir sa fiche.</p>
+      </section>
+      <section class="pane" id="pane-alertes" role="tabpanel" aria-labelledby="tab-alertes" data-pane="alertes" hidden>
+        <p class="pane-lead">Le jumeau compare chaque compteur à ce qu'il devrait indiquer. Quand l'écart dure, il prévient.</p>
         <ol class="alerts" data-bind="alerts"></ol>
-        <p class="ab-note">Trouvées par les règles du jumeau à partir des seules données de comptage. <a href="#regles">Voir les règles</a></p>
-      </div>
+      </section>
+      <section class="pane" id="pane-cmp" role="tabpanel" aria-labelledby="tab-cmp" data-pane="cmp" hidden>
+        <div data-bind="cmp"></div>
+      </section>
+
+      <details class="more">
+        <summary>Pour aller plus loin</summary>
+        <div class="more-body">
+          <div class="ctrl" role="group" aria-label="Compteur affiché">
+            <span class="ctrl-label">Compteur affiché</span>
+            <div class="usages">
+              <button type="button" data-usage="chauffage" aria-pressed="true"><svg class="ico"><use href="#i-flame"/></svg>Chauffage</button>
+              <button type="button" data-usage="ecs" aria-pressed="false"><svg class="ico"><use href="#i-shower"/></svg>Eau chaude</button>
+              <button type="button" data-usage="eau" aria-pressed="false"><svg class="ico"><use href="#i-drop"/></svg>Eau</button>
+              <button type="button" data-usage="elec" aria-pressed="false"><svg class="ico"><use href="#i-bolt"/></svg>Électricité</button>
+            </div>
+          </div>
+          <div class="ctrl" role="group" aria-label="Couleur des logements">
+            <span class="ctrl-label">Couleur des logements</span>
+            <div class="seg">
+              <button type="button" data-color="statut" aria-pressed="true">Vert, orange, rouge</button>
+              <button type="button" data-color="intensite" aria-pressed="false">Quantité consommée</button>
+            </div>
+          </div>
+          <div class="ctrl">
+            <span class="ctrl-label">Vue</span>
+            <div class="more-row">
+              <button class="chip" type="button" data-act="plan" aria-pressed="false"><svg class="ico"><use href="#i-plan"/></svg>Vue en plan d'un étage</button>
+            </div>
+          </div>
+          <ul class="more-links">
+            <li><a href="#cout-global">Coût de l'énergie sur 50 ans</a></li>
+            <li><a href="#methode">Méthode et règles de détection</a></li>
+            <li><a href="comparatif/">Comparatif complet des tours A1 et A2</a></li>
+          </ul>
+        </div>
+      </details>
     </aside>
 
     <aside class="panel panel-right" id="detail" aria-label="Détail" aria-live="polite" hidden>
@@ -136,14 +158,21 @@
       <div data-bind="detail"></div>
     </aside>
 
-    <div class="timeline" aria-label="Frise de l'année">
-      <button class="tl-play" type="button" data-act="play" aria-label="Lire l'année"><svg class="ico"><use href="#i-play"/></svg></button>
-      <div class="tl-modes seg" role="group" aria-label="Période des couleurs">
-        <button type="button" data-period="an" aria-pressed="true">Année</button>
-        <button type="button" data-period="mois" aria-pressed="false">Mois</button>
-        <button type="button" data-period="jour" aria-pressed="false">Jour</button>
+    <div class="timeline" aria-label="Mois affiché">
+      <button class="tl-play" type="button" data-act="play" aria-label="Faire défiler l'année jour par jour"><svg class="ico"><use href="#i-play"/></svg></button>
+      <div class="months" data-bind="months" role="group" aria-label="Choisir le mois"></div>
+    </div>
+    <div class="tour-wrap" data-bind="tour" hidden>
+      <div class="tour" role="dialog" aria-modal="false" aria-labelledby="tour-t">
+        <div class="tour-top"><span class="tour-n" data-bind="tour-n"></span><button class="x" type="button" data-act="tour-close" aria-label="Quitter la présentation"><svg class="ico"><use href="#i-close"/></svg></button></div>
+        <h2 class="tour-t" id="tour-t" data-bind="tour-t"></h2>
+        <p class="tour-p" data-bind="tour-p"></p>
+        <div class="tour-nav">
+          <button class="btn" type="button" data-act="tour-prev">Précédent</button>
+          <span class="tour-dots" data-bind="tour-dots" aria-hidden="true"></span>
+          <button class="btn btn-solid" type="button" data-act="tour-next">Suivant</button>
+        </div>
       </div>
-      <div class="tl-chart" data-bind="tl-chart" tabindex="0" role="slider" aria-label="Date affichée" aria-valuemin="0" aria-valuemax="365" aria-valuenow="0"></div>
     </div>
   </section>
 

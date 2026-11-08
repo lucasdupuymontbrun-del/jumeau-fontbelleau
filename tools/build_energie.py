@@ -651,6 +651,9 @@ def detect(logs, towers, silent, by):
 
 ALERT_TEXT = {
     'CH-A1.92': {
+        'lieu': 'Logement A1.92', 'titre_simple': 'Logement A1.92 : chauffage trop élevé (+{pct} %)',
+        'resume': "Depuis l'emménagement, ce logement du dernier étage chauffe {pct} % de plus que des logements semblables, quelle que soit la météo : défaut d'isolation ou d'étanchéité probable.",
+        'faire': "Thermographie et test d'étanchéité à l'air, puis reprise au titre de la garantie de parfait achèvement.",
         'titre': 'Chauffage : +{pct} % par rapport aux logements comparables',
         'cause': "Écart présent dès l'emménagement et indépendant de la météo : défaut d'enveloppe probable au dernier étage. "
                  "Le DCE retient une perméabilité à l'air à la valeur limite (Q4Pa-surf 1,00 m³/h.m²) et pas de rupteur au droit des balcons.",
@@ -658,22 +661,34 @@ ALERT_TEXT = {
                   "(PU 120 mm, R ≥ 5,40). Réclamation au titre de la garantie de parfait achèvement si le défaut est confirmé.",
         'gravite': 'serieuse'},
     'CH-A1.45': {
+        'lieu': 'Logement A1.45', 'titre_simple': 'Logement A1.45 : fenêtre restée ouverte par grand froid',
+        'resume': "Pendant la vague de froid, le chauffage a été multiplié par 2,6 en quelques heures, puis est revenu à la normale.",
+        'faire': "Message automatique à l'occupant ; rien à réparer si tout redevient normal.",
         'titre': 'Pic de chauffage pendant la vague de froid (×2,6)',
         'cause': "Consommation multipliée en quelques heures puis retour à la normale : fenêtre restée ouverte ou robinet "
                  "thermostatique bloqué en position ouverte pendant une absence.",
         'action': "Message automatique à l'occupant le 2ᵉ jour ; aucune intervention technique nécessaire si le profil redevient normal.",
         'gravite': 'attention'},
     'EA-A1.73': {
+        'lieu': 'Logement A1.73', 'titre_simple': "Logement A1.73 : fuite d'eau, {litres} L perdus",
+        'resume': "La consommation d'eau a presque doublé, y compris la nuit, sans hausse de l'eau chaude : chasse d'eau ou robinet qui fuit.",
+        'faire': "Prévenir l'occupant et le gestionnaire, faire passer un plombier.",
         'titre': "Fuite d'eau probable : {litres} L perdus",
         'cause': "Consommation d'eau presque doublée sans hausse de l'eau chaude, y compris la nuit : fuite de chasse d'eau ou de robinet.",
         'action': "Prévenir l'occupant et le gestionnaire ; intervention du plombier. À 4,16 €/m³, chaque jour de fuite coûte ≈ 1,40 €.",
         'gravite': 'serieuse'},
     'CP-A2.36': {
+        'lieu': 'Logement A2.36', 'titre_simple': 'Logement A2.36 : compteur muet pendant {jours} jours',
+        'resume': "Le compteur du logement n'envoie plus de relevé (pile ou module radio). Les consommations de la période sont estimées.",
+        'faire': "Changer la pile ou le module radio du compteur.",
         'titre': 'Compteur du module thermique muet pendant {jours} jours',
         'cause': "Plus aucune télé-relève : pile du module radio ou défaut de communication. Les consommations de la période sont estimées.",
         'action': "Intervention de l'exploitant sur le module de comptage (CCTP 502 : télé-relève des consommations tous usages).",
         'gravite': 'attention'},
     'SS-A1': {
+        'lieu': 'Sous-station A1', 'titre_simple': 'Tour A1 : chaleur perdue avant les logements (+{pct} %)',
+        'resume': "La chaleur qui sort de la sous-station sans arriver dans les logements a brusquement augmenté : une vanne de maintien en température est sans doute bloquée ouverte.",
+        'faire': "Relever les températures colonne par colonne et remplacer la vanne en cause (garantie du lot 502).",
         'titre': 'Pertes de distribution : +{pct} % par rapport au modèle appris',
         'cause': "L'écart entre le compteur de la sous-station et la somme des modules thermiques augmente brutalement : "
                  "by-pass thermostatique d'un module bloqué ouvert (maintien en température du primaire, CCTP 502 §5.5.1) "
@@ -682,6 +697,9 @@ ALERT_TEXT = {
                   "Garantie de bon fonctionnement (2 ans) du lot 502.",
         'gravite': 'critique'},
     'VHY-A2-B': {
+        'lieu': 'Extracteur colonne B', 'titre_simple': 'Tour A2 : extracteur de ventilation bloqué en marche forcée',
+        'resume': "À débit égal, il consomme {ratio} fois plus que les huit autres, même par grand froid quand le tirage naturel suffit : la régulation ne repasse plus en mode naturel.",
+        'faire': "Remettre la régulation en automatique et contrôler ses sondes.",
         'titre': 'Extracteur hybride de la colonne B bloqué en assistance : consommation ×{ratio}',
         'cause': "À débit égal, l'extracteur de la colonne B consomme {ratio} fois plus que les huit autres, jour et nuit, y compris par grand froid "
                  "quand le tirage naturel suffit : la régulation ne repasse plus en mode naturel (sonde de tirage ou de température en défaut, "
@@ -700,20 +718,29 @@ def finalize_alerts(alerts, towers, by):
             continue
         r = dict(a)
         r.update({k: v for k, v in t.items()})
+        kw = {}
         if a['type'] == 'chauffage':
+            kw['pct'] = round(a['ecart'] * 100)
             r['titre'] = t['titre'].format(pct=round(a['ecart'] * 100))
         elif a['type'] == 'eau':
+            kw['litres'] = f"{a['volume_l']:,}".replace(',', ' ')
             r['titre'] = t['titre'].format(litres=f"{a['volume_l']:,}".replace(',', ' '))
             r['cout_eur'] = round(a['volume_l'] / 1000 * 4.16, 2)
         elif a['type'] == 'donnees':
+            kw['jours'] = a['jours']
             r['titre'] = t['titre'].format(jours=a['jours'])
         elif a['type'] == 'reseau':
+            kw['pct'] = round(a['exces'] * 100)
             r['titre'] = t['titre'].format(pct=round(a['exces'] * 100))
         elif a['type'] == 'ventilation':
             ratio = str(a['ratio']).replace('.', ',')
+            kw['ratio'] = ratio
             r['titre'] = t['titre'].format(ratio=ratio)
             r['cause'] = t['cause'].format(ratio=ratio)
             r['cout_eur'] = round(a['exces_kwh'] * HYP['prix_elec']['valeur'], 2)
+        for key in ('titre_simple', 'resume'):
+            if key in t:
+                r[key] = t[key].format(**kw)
         out.append(r)
     # coût de l'excès de pertes A1 pendant l'anomalie
     for r in out:

@@ -19,7 +19,7 @@ La page est organisée en trois questions (onglets du panneau de gauche) : « To
 
 Couleurs : vert jusqu'à +20 % par rapport à des logements semblables, orange de +20 à +30 %, rouge au-delà (même seuil que la règle d'alerte R1). Chauffage : référence recalée (météo, taille, étage, orientation) ; eau et eau chaude : par occupant, comparées à la tour ; électricité : comparée aux logements de la tour qui ont le même nombre d'occupants.
 
-Présentation pour l'oral : bouton « Présentation en 5 étapes », ou adresse `…/jumeau-fontbelleau/?presentation` pour la lancer à l'ouverture. Les textes des étapes sont calculés à partir des données (`tourSteps()` dans `assets/js/energie.js`) ; les textes simples des alertes (`titre_simple`, `resume`, `faire`) sont dans `ALERT_TEXT` de `tools/build_energie.py`.
+Présentation pour l'oral : bouton « Présentation » en haut à droite, ou adresse `…/jumeau-fontbelleau/?presentation` pour la lancer à l'ouverture. Les textes des étapes sont calculés à partir des données (`tourSteps()` dans `assets/js/energie.js`) ; les textes simples des alertes (`titre_simple`, `resume`, `faire`) sont dans `ALERT_TEXT` de `tools/build_energie.py`.
 
 ## 2. Mettre à jour après une modification de la maquette
 

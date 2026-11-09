@@ -473,9 +473,6 @@ a { color: inherit; }
 
 
 /* ---------- version simplifiée : trois questions ---------- */
-.btn-tour { margin-top: 12px; width: 100%; justify-content: center; min-height: 42px; background: var(--traceur); border-color: var(--traceur); color: #fff; font-size: 14.5px; }
-.btn-tour:hover { background: #ff5a9d; border-color: #ff5a9d; }
-.btn-tour .ico { width: 14px; height: 14px; }
 .tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px; border-radius: 12px; background: rgba(238, 241, 242, .05); border: 1px solid var(--trait); }
 .tabs button {
   position: relative; border: 0; background: none; border-radius: 9px; padding: 9px 4px; cursor: pointer; font-size: 13px; font-weight: 650;
@@ -626,3 +623,9 @@ a { color: inherit; }
   .legend-ramp .lr-title { display: none; }
   .touch-hint { bottom: 112px; }
 }
+
+/* présentation : bouton en haut à droite */
+.btn-tour-top { background: rgba(255, 61, 139, .14); border-color: rgba(255, 61, 139, .6); color: #ff8dbb; }
+.btn-tour-top:hover { background: rgba(255, 61, 139, .26); border-color: var(--traceur); color: #fff; }
+.btn-tour-top .ico { width: 13px; height: 13px; }
+.in-tour .btn-tour-top { background: var(--traceur); border-color: var(--traceur); color: #fff; }

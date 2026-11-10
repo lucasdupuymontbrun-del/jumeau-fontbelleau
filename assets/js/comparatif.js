@@ -7,7 +7,7 @@ const bind = (k) => $(`[data-bind="${k}"]`);
 const NS = 'http://www.w3.org/2000/svg';
 const STORE = 'fontbelleau-comparatif-v1';
 
-const S = { D: null, pu: {}, maint: {}, prix: {}, lots: 'all', qgrp: 'Tout', qdiff: false };
+const S = { D: null, pu: {}, maint: {}, prix: {}, cyc: {}, lots: 'all', qgrp: 'Tout', qdiff: false };
 
 // éléments de la variante : postes de coût, gain d'énergie et entretien rattachés
 const ELEMS = [
@@ -57,12 +57,12 @@ const sign = (v, d = 0) => (v > 0.5 * Math.pow(10, -d) ? '+' : v < -0.5 * Math.p
 const fiab = (k) => el('span', { class: `fiab ${FIAB_CLASS[k] || ''}`, text: S.D.fiab[k] || k });
 
 function save() {
-  try { localStorage.setItem(STORE, JSON.stringify({ pu: S.pu, maint: S.maint, prix: S.prix })); } catch (e) { /* stockage indisponible */ }
+  try { localStorage.setItem(STORE, JSON.stringify({ pu: S.pu, maint: S.maint, prix: S.prix, cyc: S.cyc })); } catch (e) { /* stockage indisponible */ }
 }
 function restore() {
   try {
     const v = JSON.parse(localStorage.getItem(STORE) || 'null');
-    if (v) { S.pu = v.pu || {}; S.maint = v.maint || {}; S.prix = v.prix || {}; }
+    if (v) { S.pu = v.pu || {}; S.maint = v.maint || {}; S.prix = v.prix || {}; S.cyc = v.cyc || {}; }
   } catch (e) { /* stockage indisponible */ }
 }
 
@@ -474,12 +474,168 @@ function renderSources() {
   host.append(ul);
 }
 
+// ---------- coût global sur 50 ans ----------
+function cyc(k) { return S.cyc[k] != null ? S.cyc[k] : S.D.cycle.params[k]; }
+
+function computeCycle(R, over = {}) {
+  const Cy = S.D.cycle, Y = Cy.annees;
+  const p = (k) => (over[k] != null ? over[k] : cyc(k));
+  const tva = p('tva') / 100, gc = p('evol_couts') / 100, ge = prix('evol_energie') / 100, r = p('actualisation') / 100, hon = p('honoraires') / 100;
+  const z = () => new Array(Y + 1).fill(0);
+  const c = { conception: z(), travaux: z(), energie: z(), entretien: z(), remplacements: z(), fin: z(), aides: z() };
+  c.conception[0] = (hon * R.delta + Cy.conception.etudes) * (1 + tva);
+  c.travaux[0] = R.delta * (1 + tva);
+  for (let t = 1; t <= Y; t++) {
+    c.energie[t] = -R.gain * Math.pow(1 + ge, t - 1);
+    c.entretien[t] = R.maint * Math.pow(1 + gc, t - 1) * (1 + tva);
+  }
+  const steps = [];
+  for (const rp of Cy.remplacements) for (let t = rp.duree; t < Y; t += rp.duree) {
+    c.remplacements[t] += (rp.A2 - rp.A1) * Math.pow(1 + gc, t) * (1 + tva);
+    steps.push(t);
+  }
+  c.fin[Y] = Cy.fin_de_vie.reduce((s, f) => s + f.qte * f.pu, 0) * Math.pow(1 + gc, Y) * (1 + tva);
+  const tf = Cy.aides.find((a) => a.id === 'tfpb');
+  const act = (t) => Math.pow(1 + r, -t);
+  let tfpbPot = 0;
+  for (let t = tf.annees[0]; t <= tf.annees[1]; t++) {
+    const v = tf.montant_an * Math.pow(1 + gc, t - 1);
+    tfpbPot += v * act(t);
+    if (p('tfpb')) c.aides[t] -= v;
+  }
+  const tot = {};
+  for (const [k, v] of Object.entries(c)) tot[k] = v.reduce((s, x, t) => s + x * act(t), 0);
+  const cum = []; let run = 0;
+  for (let t = 0; t <= Y; t++) { run += Object.values(c).reduce((s, v) => s + v[t], 0) * act(t); cum.push(run); }
+  const retour = cum.findIndex((v, t) => t > 0 && v <= 0);
+  return { Y, c, tot, cum, total: cum[Y], retour: retour > 0 ? retour : null, locataires: tot.energie, bailleur: cum[Y] - tot.energie, tfpbPot, steps: [...new Set(steps)].sort((a, b) => a - b) };
+}
+
+function niceStep(v) { const pw = Math.pow(10, Math.floor(Math.log10(v || 1))); const n = v / pw; return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * pw; }
+
+function lineChart(host, series, { aria }) {
+  host.textContent = '';
+  const W = width(host), narrow = W < 560, H = narrow ? 220 : 260;
+  const mL = narrow ? 52 : 70, mR = 14, mT = 10, mB = 26;
+  const Y = series[0].values.length - 1;
+  const all = series.flatMap((s) => s.values);
+  const step = niceStep((Math.max(0, ...all) - Math.min(0, ...all)) / 5);
+  const lo = Math.floor(Math.min(0, ...all) / step) * step, hi = Math.ceil(Math.max(0, ...all) / step) * step;
+  const x = (t) => mL + (t / Y) * (W - mL - mR), y = (v) => mT + ((hi - v) / (hi - lo || 1)) * (H - mT - mB);
+  const svg = sv('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': aria });
+  for (let v = lo; v <= hi + step / 2; v += step) {
+    svg.append(sv('line', { x1: mL, x2: W - mR, y1: y(v), y2: y(v), stroke: Math.abs(v) < step / 2 ? '#1e2428' : '#cfd4d2', 'stroke-width': Math.abs(v) < step / 2 ? 1.2 : 0.8 }));
+    svg.append(sv('text', { x: mL - 8, y: y(v) + 4, class: 'ax', 'text-anchor': 'end' }, `${sign(v / 1000)} k€`));
+  }
+  const every = narrow ? 25 : 10;
+  for (let t = 0; t <= Y; t += every) svg.append(sv('text', { x: x(t), y: H - 6, class: 'ax', 'text-anchor': t === 0 ? 'start' : t === Y ? 'end' : 'middle' }, t === 0 ? 'Livraison' : `${t} ans`));
+  for (const s of series) {
+    const d = s.values.map((v, t) => `${t ? 'L' : 'M'}${x(t).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+    svg.append(sv('path', { d, fill: 'none', stroke: s.color, 'stroke-width': s.width || 2.4, 'stroke-dasharray': s.dash || null, 'stroke-linejoin': 'round' }));
+  }
+  const rule = sv('line', { y1: mT, y2: H - mB, stroke: '#1e2428', 'stroke-width': 1, 'stroke-dasharray': '3 3', visibility: 'hidden' });
+  svg.append(rule);
+  for (let t = 0; t <= Y; t++) {
+    const w = (W - mL - mR) / Y;
+    const hit = sv('rect', { x: x(t) - w / 2, y: mT, width: w, height: H - mT - mB, class: 'hit' });
+    hit.addEventListener('pointerenter', () => { rule.setAttribute('x1', x(t)); rule.setAttribute('x2', x(t)); rule.setAttribute('visibility', 'visible'); });
+    hit.addEventListener('pointerleave', () => rule.setAttribute('visibility', 'hidden'));
+    hover(hit, () => `<b>${t === 0 ? 'Livraison' : `Année ${t}`}</b>` + series.map((s) => `<br>${s.label} : ${sign(s.values[t])} €`).join(''));
+    svg.append(hit);
+  }
+  host.append(svg);
+}
+
+function renderCycleForm() {
+  const form = bind('cg-form');
+  if (form.childElementCount) return;
+  const num = (k, step, label, hint, get = cyc, set = (v) => { S.cyc[k] = v; }) => el('label', {}, el('span', {}, label, ' ', el('small', { text: hint })),
+    el('input', { type: 'number', step, value: get(k), inputmode: 'decimal', oninput: (e) => { const v = parseFloat(e.target.value); if (isFinite(v)) { set(v); save(); update(); } } }));
+  const tva = el('select', { onchange: (e) => { S.cyc.tva = parseFloat(e.target.value); save(); update(); } },
+    el('option', { value: '10', text: '10 % (PLUS hors renouvellement urbain)' }), el('option', { value: '5.5', text: '5,5 % (PLAI ou PLUS en NPNRU)' }));
+  tva.value = String(cyc('tva'));
+  const tf = el('input', { type: 'checkbox', checked: cyc('tfpb') ? true : null, onchange: (e) => { S.cyc.tfpb = e.target.checked; save(); update(); } });
+  form.append(
+    num('honoraires', 0.5, 'Honoraires de maîtrise d\'œuvre, % des travaux', '(méthode MIQCP)'),
+    el('label', {}, el('span', {}, 'TVA du logement social ', el('small', { text: '(dépenses du bailleur)' })), tva),
+    num('evol_energie', 0.1, 'Évolution du prix de l\'énergie, %/an', '(hypothèse)', prix, (v) => { S.prix.evol_energie = v; }),
+    num('evol_couts', 0.1, 'Évolution des coûts d\'entretien et de travaux, %/an', '(hypothèse)'),
+    num('actualisation', 0.5, 'Taux d\'actualisation, %/an', '(0 % : euros courants)'),
+    el('label', { class: 'cg-check' }, tf, el('span', {}, 'Compter l\'exonération de taxe foncière prolongée ', el('small', { text: '(conditionnelle)' }))));
+}
+
+const STATUT = { Conditionnelle: 'is-cond', Suspendue: 'is-off', 'Non applicable': 'is-off', 'Fiscalité': 'is-info' };
+
+function renderCycle(R) {
+  const Cy = S.D.cycle, K = computeCycle(R), KT = computeCycle(R, { tfpb: true }), K0 = computeCycle(R, { tfpb: false });
+  const r = cyc('actualisation');
+  // chiffres clés
+  const host = bind('cg-kpis'); host.textContent = '';
+  const k = (l, v, u, s, cls) => el('div', { class: `kpi ${cls || ''}` }, el('span', { class: 'kpi-l', text: l }), el('span', { class: 'kpi-v' }, v, el('small', { text: u })), el('span', { class: 'kpi-s', text: s }));
+  host.append(
+    k('Coût global net de la variante', sign(K.total / 1000), 'k€', K.retour ? `Remboursée en ${K.retour} ans` : 'Pas remboursée en 50 ans', K.total > 0 ? 'is-neg' : 'is-pos'),
+    k('Études et travaux', fmt((K.tot.conception + K.tot.travaux) / 1000), 'k€', 'Payés par le bailleur, TVA comprise'),
+    k('Énergie économisée', fmt(-K.tot.energie / 1000), 'k€', 'Sur 50 ans, par les locataires (charges)'),
+    k('Si la taxe foncière est prolongée', sign(KT.total / 1000), 'k€', KT.retour ? `Remboursée en ${KT.retour} ans (si conditions remplies)` : 'Si conditions remplies', KT.total > 0 ? 'is-neg' : 'is-pos'));
+  // courbe
+  bind('cg-sub').textContent = `Au-dessus de zéro, la variante a coûté plus qu'elle n'a rapporté. ${r ? `Valeurs actualisées à ${fmt(r, 1)} %/an.` : 'Euros courants, prix évolutifs.'}`;
+  lineChart(bind('cg-chart'), [
+    { label: 'Sans aide', values: K0.cum, color: '#eb6834' },
+    { label: 'Avec la taxe foncière prolongée', values: KT.cum, color: '#22764a', dash: '6 4', width: 2 },
+  ], { aria: 'Coût cumulé de la variante sur 50 ans, avec et sans l\'exonération de taxe foncière prolongée' });
+  const lg = bind('cg-legend'); lg.textContent = '';
+  lg.append(el('span', { class: 'cg-l', style: { '--c': '#eb6834' }, text: 'Sans aide' }), el('span', { class: 'cg-l is-dash', style: { '--c': '#22764a' }, text: 'Avec la taxe foncière prolongée (années 26 à 30), si la tour A2 remplit les conditions' }),
+    el('span', { class: 'cg-n', text: `Paliers : remplacements aux années ${K.steps.join(', ')}. Dernière année : démolition.` }));
+  // tableau par poste
+  const tb = bind('cg-table'); tb.textContent = '';
+  tb.append(el('thead', {}, el('tr', {}, el('th', { text: 'Poste' }), el('th', { text: 'Quand' }), el('th', { text: 'Qui paie' }), el('th', { class: 'n', text: 'Sur 50 ans' }))));
+  const body = el('tbody');
+  const ln = (poste, note, quand, qui, v) => body.append(el('tr', {}, el('td', {}, el('span', { class: 'item', text: poste }), note ? el('span', { class: 'qnote', text: note }) : null), el('td', { text: quand }), el('td', { text: qui }), el('td', { class: 'n', text: `${sign(v)} €` })));
+  const tvaTxt = `TVA ${fmt(cyc('tva'), 1).replace(',0', '')} %`;
+  ln('Études', `${fmt(cyc('honoraires'), 1).replace(',0', '')} % d'honoraires sur le surcoût de travaux et ${fmt(Cy.conception.etudes)} € HT d'études propres à la variante. ${tvaTxt}`, 'Avant les travaux', 'Bailleur', K.tot.conception);
+  ln('Travaux', `Surcoût de la rubrique Coûts de travaux (${fmt(R.delta)} € HT). ${tvaTxt}`, 'Construction', 'Bailleur', K.tot.travaux);
+  ln('Énergie', `${fmt(R.gain)} € TTC économisés la première année, prix + ${fmt(prix('evol_energie'), 1)} %/an`, 'Chaque année', 'Locataires', K.tot.energie);
+  ln('Entretien', `${sign(R.maint)} € HT par an, coûts + ${fmt(cyc('evol_couts'), 1)} %/an. ${tvaTxt}`, 'Chaque année', 'Bailleur (en partie dans les charges)', K.tot.entretien);
+  ln('Remplacements', 'Extracteurs à 17 et 34 ans, solaire selon ses durées de vie (détail plus bas)', `Années ${K.steps.join(', ')}`, 'Bailleur', K.tot.remplacements);
+  ln('Fin de vie', 'Dépose de l\'ITE, doublage en moins, substrat de toiture', 'Année 50', 'Bailleur', K.tot.fin);
+  ln('Aides', cyc('tfpb') ? 'Taxe foncière évitée des années 26 à 30 (conditionnelle)' : 'Aucune aide acquise. Cochez la taxe foncière pour l\'ajouter', cyc('tfpb') ? 'Années 26 à 30' : '—', 'Bailleur', K.tot.aides);
+  body.append(el('tr', { class: 'tot' }, el('td', { text: 'Coût global net' }), el('td'), el('td', { text: `Bailleur ${sign(K.bailleur)} € · locataires ${sign(K.locataires)} €` }), el('td', { class: 'n', text: `${sign(K.total)} €` })));
+  tb.append(body, el('caption', { style: { captionSide: 'bottom', textAlign: 'left', padding: '10px 12px', fontSize: '12.5px', color: 'var(--ardoise)' } }, Cy.note));
+  // aides
+  const ah = bind('cg-aides'); ah.textContent = '';
+  for (const a of Cy.aides) {
+    const amount = a.id === 'tfpb' ? `≈ ${fmt(K.tfpbPot)} € de taxe évitée (années 26 à 30)` : a.montant === 0 ? '0 €' : null;
+    ah.append(el('article', { class: `cg-aide ${STATUT[a.statut] || ''}` },
+      el('div', { class: 'cg-aide-h' }, el('strong', { text: a.titre }), el('span', { class: 'cg-st', text: a.statut })),
+      el('p', { text: a.conditions }),
+      a.note ? el('p', { class: 'qnote', text: a.note }) : null,
+      amount ? el('p', { class: 'cg-amt', text: amount }) : null,
+      el('p', { class: 'cg-src', text: a.src.map((s) => S.D.sources[s]?.titre).filter(Boolean).join(' · ') })));
+  }
+  // remplacements et fin de vie
+  const rt = bind('cg-rempl');
+  if (!rt.childElementCount) {
+    rt.append(el('thead', {}, el('tr', {}, el('th', { text: 'Remplacement' }), el('th', { class: 'n', text: 'Durée de vie' }), el('th', { class: 'n', text: 'Tour A1, € HT' }), el('th', { class: 'n', text: 'Tour A2, € HT' }), el('th', { class: 'n', text: 'Écart' }))));
+    const b = el('tbody');
+    for (const rp of Cy.remplacements) b.append(el('tr', {}, el('td', {}, el('span', { class: 'item', text: rp.poste }), el('span', { class: 'qnote', text: `${rp.note}. ${rp.src.map((s) => S.D.sources[s]?.titre).join(' ; ')}` })),
+      el('td', { class: 'n', text: `${rp.duree} ans` }), el('td', { class: 'n', text: fmt(rp.A1) }), el('td', { class: 'n', text: fmt(rp.A2) }), el('td', { class: 'n', text: sign(rp.A2 - rp.A1) })));
+    rt.append(b);
+    const ft = bind('cg-fin');
+    ft.append(el('thead', {}, el('tr', {}, el('th', { text: 'Fin de vie (année 50)' }), el('th', { class: 'n', text: 'Quantité' }), el('th', { class: 'n', text: 'PU € HT' }), el('th', { class: 'n', text: 'Montant 2026' }))));
+    const b2 = el('tbody');
+    for (const f of Cy.fin_de_vie) b2.append(el('tr', {}, el('td', {}, el('span', { class: 'item', text: f.poste }), el('span', { class: 'qnote', text: f.note })),
+      el('td', { class: 'n', text: `${fmt(f.qte, f.unite === 'm³' ? 1 : 0)} ${f.unite}` }), el('td', { class: 'n', text: sign(f.pu) }), el('td', { class: 'n', text: sign(f.qte * f.pu) })));
+    ft.append(b2);
+  }
+}
+
 function update() {
   const R = compute();
   renderKpis(R);
   renderAttention(R);
   renderCouts(R);
   renderExploitation(R);
+  renderCycle(R);
   renderCarbone(R);
 }
 
@@ -504,6 +660,7 @@ async function main() {
   renderQteFilter();
   renderQuantites();
   renderPrixForm();
+  renderCycleForm();
   renderSources();
   update();
   wireNav();
@@ -513,9 +670,9 @@ async function main() {
     renderLots();
   }));
   $('[data-act="reset-couts"]').addEventListener('click', () => {
-    S.pu = {}; S.maint = {}; S.prix = {}; save();
-    bind('postes').textContent = ''; bind('maint').textContent = ''; bind('prix-form').textContent = '';
-    renderPrixForm(); update();
+    S.pu = {}; S.maint = {}; S.prix = {}; S.cyc = {}; save();
+    bind('postes').textContent = ''; bind('maint').textContent = ''; bind('prix-form').textContent = ''; bind('cg-form').textContent = '';
+    renderPrixForm(); renderCycleForm(); update();
   });
   let w = window.innerWidth, t = 0;
   window.addEventListener('resize', () => {

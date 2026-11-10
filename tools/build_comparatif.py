@@ -61,6 +61,19 @@ SOURCES = {
     'co2_chaleur': {'titre': 'Arrêté du 11 avril 2025 (contenus CO₂ des réseaux, année 2023)', 'ref': 'Réseau 3324C : 0,034 kgCO₂e/kWh (ACV). Mise à jour par arrêté du 30 mars 2026 : à reprendre'},
 }
 
+SOURCES.update({
+    'miqcp': {'titre': 'MIQCP, guide de négociation des rémunérations de maîtrise d\'œuvre (actualisation 2019)', 'ref': 'Honoraires exprimés en pourcentage du montant HT des travaux, selon la complexité de l\'opération', 'url': 'https://www.marche-public.fr/contrats-publics/MIQCP-guide-negociation-2019.htm'},
+    'cee_bar155': {'titre': 'Fiche CEE BAR-TH-155, ventilation hybride hygroréglable', 'ref': 'Secteur d\'application : appartements existants. Durée de vie conventionnelle : 17 ans', 'url': 'https://calculateur-cee.ademe.fr/pdf/display/300/BAR-TH-155'},
+    'cee_bar127': {'titre': 'Fiche CEE BAR-TH-127, VMC simple flux hygroréglable', 'ref': 'Durée de vie conventionnelle : 17 ans', 'url': 'https://calculateur-cee.ademe.fr/pdf/display/299/BAR-TH-127'},
+    'ademe_solaire': {'titre': 'ADEME, guide « Adopter le solaire thermique »', 'ref': 'Capteurs plans 20 à 30 ans, ballon 15 à 20 ans, circulateur, sondes et régulation environ 10 ans', 'url': 'https://librairie.ademe.fr/ged/7736/guide-adopter-solaire-thermique.pdf'},
+    'fonds_chaleur': {'titre': 'ADEME, Fonds Chaleur : installation de production d\'eau chaude solaire thermique (2026)', 'ref': 'Logements collectifs éligibles ; dépôt de nouvelles demandes suspendu, aide close le 4 novembre 2026', 'url': 'https://agirpourlatransition.ademe.fr/entreprises/aides-financieres/catalogue/2026/installation-de-production-deau-chaude-solaire-thermique'},
+    'fonds_chaleur_cond': {'titre': 'ADEME, conditions d\'éligibilité et de financement, solaire thermique eau chaude sanitaire (2024)', 'ref': 'Aide forfaitaire à partir de 25 m² de capteurs en métropole', 'url': 'https://agir.ademe.fr/sites/default/files/Conditions%20%C3%A9ligibilit%C3%A9%20et%20financement%20-%20Solaire%20thermique%20eau%20chaude%20sanitaire%20-%202024.pdf'},
+    'tfpb': {'titre': 'CGI art. 1384 A ; décret n° 2023-560 du 3 juillet 2023 (synthèse Cerqual Qualitel Certification)', 'ref': 'Logement locatif social neuf : exonération de 25 ans si la décision de financement est prise avant le 31/12/2026, 30 ans si les critères de performance sont aussi remplis (permis 2025-2027 : Ic construction ≤ 580 et Ic énergie ≤ 260 kgCO₂e/m², certification NF Habitat)', 'url': 'https://qualitel.org/professionnels/uploads/Complement_Exo_TFPB_MAJ_RE2020_Juin_2023_QC4_VDEF.pdf'},
+    'tfpb_montant': {'titre': 'Fipeco, note sur les taxes foncières', 'ref': 'Taxe foncière moyenne des logements : environ 12,5 € par m² de surface, avec de forts écarts entre communes', 'url': 'https://fipeco.fr/pdf/Taxes%20fonci%C3%A8res.pdf'},
+    'tva_lls': {'titre': 'TVA des logements locatifs sociaux neufs (CGI art. 278 sexies), amendements au PLF 2026', 'ref': '5,5 % en PLAI ou en PLUS dans le cadre du NPNRU ; 10 % pour les autres PLUS et les PLS. Retour à 5,5 % pour tous : amendements rejetés', 'url': 'https://www.assemblee-nationale.fr/dyn/17/amendements/1906A/AN/1907.pdf'},
+    'demolition': {'titre': 'La Maison Saint-Gobain, budget des travaux de démolition', 'ref': 'Évacuation des gravats seule : 30 à 70 €/m³', 'url': 'https://www.lamaisonsaintgobain.fr/guides-travaux/questions-travaux/quel-budget-prevoir-pour-les-travaux-de-demolition'},
+})
+
 FIAB = {
     'maquette': 'Maquette',
     'cctp': 'CCTP',
@@ -111,7 +124,7 @@ def load_rows():
     idx = json.load(open(os.path.join(PASSEPORT, 'data', 'index.json'), encoding='utf-8'))
     rows = []
     for o in idx['ouvrages']:
-        ref, reference, des, zone, etage, fam, statut, revit = o
+        ref, reference, des, zone, etage, fam, statut, revit = o[:8]   # colonnes suivantes : dates 4D (passeport)
         j = json.load(open(os.path.join(PASSEPORT, 'data', 'o', ref + '.json'), encoding='utf-8'))
         idd = {it['cle']: it for it in j['identite'] if isinstance(it, dict)}
         sv = (idd.get('surface_volume') or {}).get('valeur') or ''
@@ -465,6 +478,92 @@ def defaults(C, E):
             'gain_energie': round(sum(g_eur.values())), 'gain_co2': round(sum(g_co2.values())), 'delta_maintenance': round(dm),
             'gain_net': round(sum(g_eur.values()) - dm), 'gains_eur': {kk: round(v) for kk, v in g_eur.items()},
             'gains_co2': {kk: round(v) for kk, v in g_co2.items()}}
+
+
+TFPB_M2 = 12.5          # € par m² habitable et par an (moyenne nationale, Fipeco)
+
+
+def cycle(C, E):
+    """Coût global sur 50 ans : conception, remplacements, fin de vie et aides (écart de la variante, tour A2)."""
+    P = {p['id']: p for p in C['postes']}
+    shab2 = E['tours']['A2']['shab']
+    rempl = [
+        {'id': 'vent', 'poste': 'Ventilation : 9 extracteurs hybrides (A2) au lieu de 3 caissons (A1)',
+         'A1': round(-P['caisson']['pu'] * P['caisson']['qte']), 'A2': round(P['vhy']['pu'] * P['vhy']['qte']), 'duree': 17, 'fiab': 'hypothese', 'src': ['cee_bar155', 'cee_bar127'],
+         'note': 'Durée de vie conventionnelle de 17 ans dans les deux fiches CEE : remplacement aux années 17 et 34. Prix des postes du comparatif'},
+        {'id': 'sol_reg', 'poste': 'Eau chaude solaire : circulateur, sondes et régulation', 'A1': 0, 'A2': 3000, 'duree': 10, 'fiab': 'hypothese', 'src': ['ademe_solaire'],
+         'note': 'Environ 10 ans (ADEME). Montant : environ 8 % de l\'installation'},
+        {'id': 'sol_ballon', 'poste': 'Eau chaude solaire : ballon de 1 500 L', 'A1': 0, 'A2': 6000, 'duree': 20, 'fiab': 'hypothese', 'src': ['ademe_solaire'],
+         'note': '15 à 20 ans (ADEME). Montant : environ 17 % de l\'installation'},
+        {'id': 'sol_capt', 'poste': 'Eau chaude solaire : 30 m² de capteurs plans', 'A1': 0, 'A2': 12000, 'duree': 25, 'fiab': 'hypothese', 'src': ['ademe_solaire'],
+         'note': '20 à 30 ans (ADEME), 25 ans retenus. Montant : environ 33 % de l\'installation'},
+    ]
+    ite, tv = P['ite']['qte'], P['tv']['qte']
+    fin = [
+        {'id': 'ite', 'poste': 'Dépose et tri de l\'ITE (PSE graphité et enduit)', 'qte': ite, 'unite': 'm²', 'pu': 15, 'fiab': 'hypothese', 'src': [],
+         'note': 'Dépose sélective de l\'isolant et de l\'enduit avant la démolition'},
+        {'id': 'dbl', 'poste': 'Doublage intérieur à déposer en moins', 'qte': ite, 'unite': 'm²', 'pu': -8, 'fiab': 'hypothese', 'src': [],
+         'note': 'Le doublage collé de la conception DCE se dépose au curage'},
+        {'id': 'tv', 'poste': 'Évacuation du substrat de la toiture végétalisée (8 cm)', 'qte': round(tv * 0.08, 1), 'unite': 'm³', 'pu': 50, 'fiab': 'cite', 'src': ['demolition'],
+         'note': 'Terre et sédums évacués comme des matériaux inertes'},
+    ]
+    tfpb_an = round(shab2 * TFPB_M2)
+    aides = [
+        {'id': 'tfpb', 'titre': 'Exonération de taxe foncière prolongée de 25 à 30 ans', 'statut': 'Conditionnelle', 'montant_an': tfpb_an, 'annees': [26, 30], 'fiab': 'hypothese',
+         'src': ['tfpb', 'tfpb_montant'],
+         'conditions': 'La tour A2 est un logement locatif social neuf (CDC Habitat). Son exonération de taxe foncière dure 25 ans si la décision de financement est prise avant le 31/12/2026. '
+                       'Elle passe à 30 ans si la construction respecte aussi les seuils RE2020 de 2028 (permis déposé en 2025-2027 : Ic construction ≤ 580 et Ic énergie ≤ 260 kgCO₂e/m²), attestés par une certification NF Habitat. '
+                       'Rien ne garantit que la variante atteigne ces seuils : il faut le calcul RE2020 de la tour A2.',
+         'note': f'Taxe évitée pendant les années 26 à 30 : {shab2:,.0f} m² × {TFPB_M2:.1f} €/m² (moyenne nationale) ≈ {tfpb_an:,} € par an, valeur 2026'.replace(',', ' ').replace('.', ',')},
+        {'id': 'fonds_chaleur', 'titre': 'Fonds Chaleur de l\'ADEME (eau chaude solaire)', 'statut': 'Suspendue', 'montant': 0, 'src': ['fonds_chaleur', 'fonds_chaleur_cond'],
+         'conditions': 'Les installations de logement collectif de 25 m² de capteurs ou plus sont éligibles en métropole : les 30 m² de la tour A2 le seraient. Le dépôt de nouvelles demandes est suspendu depuis le 4 novembre 2026 ; à surveiller pour 2027.'},
+        {'id': 'cee', 'titre': 'Certificats d\'économies d\'énergie (fiche BAR-TH-155)', 'statut': 'Non applicable', 'montant': 0, 'src': ['cee_bar155'],
+         'conditions': 'La fiche vise les appartements existants : une construction neuve n\'y ouvre pas droit.'},
+        {'id': 'tva', 'titre': 'TVA réduite du logement social', 'statut': 'Fiscalité', 'montant': None, 'src': ['tva_lls'],
+         'conditions': '10 % pour un logement financé en PLUS hors renouvellement urbain, 5,5 % en PLAI ou en PLUS dans le cadre du NPNRU. Les amendements qui rétablissaient 5,5 % pour tous ont été rejetés. Le taux s\'applique ici aux dépenses du bailleur.'},
+    ]
+    return {
+        'annees': 50,
+        'params': {'tva': 10.0, 'evol_couts': 2.0, 'actualisation': 0.0, 'honoraires': 10.0, 'tfpb': False},
+        'conception': {'etudes': 12000, 'fiab': 'hypothese', 'src': ['miqcp'],
+                       'note': 'Honoraires de maîtrise d\'œuvre en pourcentage du surcoût de travaux (méthode MIQCP), plus 12 000 € HT d\'études propres à la variante : dimensionnement de la ventilation hybride par le calcul, étude de faisabilité solaire, calcul RE2020 et ACV'},
+        'remplacements': rempl, 'fin_de_vie': fin, 'aides': aides, 'tfpb_m2': TFPB_M2,
+        'note': 'Écart de la tour A2 (variante) par rapport à la conception du DCE, sur 50 ans. Énergie : gain du jumeau (tour A1 ramenée à la surface de A2), au prix TTC payé par les locataires. '
+                'Dépenses du bailleur (études, travaux, entretien, remplacements, fin de vie) majorées de la TVA du logement social. Montants courants avec évolution des prix ; actualisation réglable (0 % par défaut).',
+    }
+
+
+def cycle_totals(Cy, D, E, over=None):
+    p = dict(Cy['params'])
+    p.update(over or {})
+    Y = Cy['annees']
+    tva, gc, ge, r, hon = p['tva'] / 100, p['evol_couts'] / 100, E['prix']['evol_energie'] / 100, p['actualisation'] / 100, p['honoraires'] / 100
+    cats = {c: [0.0] * (Y + 1) for c in ('conception', 'travaux', 'energie', 'entretien', 'remplacements', 'fin', 'aides')}
+    cats['conception'][0] = (hon * D['delta'] + Cy['conception']['etudes']) * (1 + tva)
+    cats['travaux'][0] = D['delta'] * (1 + tva)
+    for t in range(1, Y + 1):
+        cats['energie'][t] = -D['gain_energie'] * (1 + ge) ** (t - 1)
+        cats['entretien'][t] = D['delta_maintenance'] * (1 + gc) ** (t - 1) * (1 + tva)
+    for rp in Cy['remplacements']:
+        t = rp['duree']
+        while t < Y:
+            cats['remplacements'][t] += (rp['A2'] - rp['A1']) * (1 + gc) ** t * (1 + tva)
+            t += rp['duree']
+    cats['fin'][Y] = sum(f['qte'] * f['pu'] for f in Cy['fin_de_vie']) * (1 + gc) ** Y * (1 + tva)
+    tf = next(a for a in Cy['aides'] if a['id'] == 'tfpb')
+    if p['tfpb']:
+        for t in range(tf['annees'][0], tf['annees'][1] + 1):
+            cats['aides'][t] -= tf['montant_an'] * (1 + gc) ** (t - 1)
+    act = [(1 + r) ** -t for t in range(Y + 1)]
+    tot = {c: round(sum(v[t] * act[t] for t in range(Y + 1))) for c, v in cats.items()}
+    cum, run = [], 0.0
+    for t in range(Y + 1):
+        run += sum(v[t] for v in cats.values()) * act[t]
+        cum.append(round(run))
+    retour = next((t for t in range(1, Y + 1) if cum[t] <= 0), None)
+    tfpb_pot = round(sum(tf['montant_an'] * (1 + gc) ** (t - 1) * act[t] for t in range(tf['annees'][0], tf['annees'][1] + 1)))
+    return {'params': p, 'totaux': tot, 'total': cum[-1], 'retour': retour, 'cumul': cum,
+            'locataires': tot['energie'], 'bailleur': cum[-1] - tot['energie'], 'tfpb_potentiel': tfpb_pot}
 
 
 def attention(k, D):
@@ -828,6 +927,128 @@ def build_xlsx(data, path):
     put(ws, r, 1, E['note'], font=f_note, al=wrap)
     ws.freeze_panes = 'A3'
 
+    # ---- Coût global sur 50 ans
+    Cy = data['cycle']
+    Y = Cy['annees']
+    ws = sheet('Coût global 50 ans', [44, 15, 15, 15, 15, 15, 15, 15, 15, 12, 15, 15])
+    ws['A1'] = f'Coût global sur {Y} ans — écart de la variante (tour A2)'
+    ws['A1'].font = f_title
+    put(ws, 2, 1, Cy['note'], font=f_note, al=wrap)
+    ws.merge_cells('A2:L2')
+    ws.row_dimensions[2].height = 42
+    put(ws, 4, 1, 'Paramètres', font=f_bb)
+    pr = Cy['params']
+    prm = [('Honoraires de maîtrise d\'œuvre, % du surcoût de travaux', pr['honoraires'] / 100, '0.0%', 'Méthode MIQCP : pourcentage du montant HT des travaux'),
+           ('Études propres à la variante, € HT', Cy['conception']['etudes'], EUR, Cy['conception']['note']),
+           ('TVA du logement social sur les dépenses du bailleur', pr['tva'] / 100, '0.0%', '10 % (PLUS hors NPNRU) ou 5,5 % (PLAI, PLUS en NPNRU)'),
+           ('Évolution des coûts d\'entretien et de travaux, %/an', pr['evol_couts'] / 100, '0.0%', 'Hypothèse'),
+           ('Taux d\'actualisation, %/an', pr['actualisation'] / 100, '0.0%', '0 % : euros courants'),
+           ('Compter la taxe foncière prolongée (1 = oui, 0 = non)', 1 if pr['tfpb'] else 0, '0', 'Conditionnelle : seuils RE2020 2028 et certification'),
+           ('Taxe foncière évitée par an (années 26 à 30), € 2026', next(a for a in Cy['aides'] if a['id'] == 'tfpb')['montant_an'], EUR, f"{data['tours']['A2']['shab']} m² × {Cy['tfpb_m2']} €/m² (moyenne nationale, Fipeco)")]
+    PR = {}
+    r = 5
+    for i, (lab_, v, fm, note) in enumerate(prm):
+        put(ws, r, 1, lab_)
+        put(ws, r, 2, v, font=f_in, fill=fill_in, fmt=fm)
+        put(ws, r, 3, note, font=f_note)
+        PR[i] = f'$B${r}'
+        r += 1
+    HON, ETU, TVA, GC, ACT, TF, TFA = (PR[i] for i in range(7))
+    put(ws, r, 1, 'Évolution du prix de l\'énergie, %/an')
+    put(ws, r, 2, f"='Exploitation'!{R['evol_energie']}", font=f_link, fmt='0.0%')
+    GE = f'$B${r}'
+    r += 1
+    put(ws, r, 1, 'Surcoût de travaux de la variante, € HT')
+    put(ws, r, 2, f"={COUT['delta']}", font=f_link, fmt=EUR)
+    DEL = f'$B${r}'
+    r += 1
+    put(ws, r, 1, 'Énergie économisée la première année, € TTC')
+    put(ws, r, 2, f"={EXP['gain']}", font=f_link, fmt=EUR)
+    GAIN = f'$B${r}'
+    r += 1
+    put(ws, r, 1, 'Entretien supplémentaire, € HT/an')
+    put(ws, r, 2, f"={EXP['maint']}", font=f_link, fmt=EUR)
+    MNT = f'$B${r}'
+    r += 2
+    put(ws, r, 1, 'Remplacements', font=f_bb)
+    r += 1
+    header(ws, r, ['Remplacement', 'Durée de vie, ans', 'Tour A1, € HT', 'Tour A2, € HT', 'Écart', 'Note'])
+    r += 1
+    RP = []
+    for rp in Cy['remplacements']:
+        put(ws, r, 1, rp['poste'])
+        put(ws, r, 2, rp['duree'], font=f_in, fill=fill_in, fmt='0')
+        put(ws, r, 3, rp['A1'], font=f_in, fill=fill_in, fmt=EUR)
+        put(ws, r, 4, rp['A2'], font=f_in, fill=fill_in, fmt=EUR)
+        put(ws, r, 5, f'=D{r}-C{r}', fmt=EUR)
+        put(ws, r, 6, rp['note'] + ' — ' + '; '.join(SOURCES[x]['titre'] for x in rp['src']), font=f_note)
+        RP.append(r)
+        r += 1
+    r += 1
+    put(ws, r, 1, f'Fin de vie (année {Y})', font=f_bb)
+    r += 1
+    header(ws, r, ['Poste', 'Quantité', 'Unité', 'PU € HT', 'Montant 2026', 'Note'])
+    r += 1
+    f0 = r
+    for f in Cy['fin_de_vie']:
+        put(ws, r, 1, f['poste'])
+        put(ws, r, 2, f['qte'], font=f_in, fmt=NUM1)
+        put(ws, r, 3, f['unite'])
+        put(ws, r, 4, f['pu'], font=f_in, fill=fill_in, fmt=EUR)
+        put(ws, r, 5, f'=B{r}*D{r}', fmt=EUR)
+        put(ws, r, 6, f['note'], font=f_note)
+        r += 1
+    put(ws, r, 1, 'Total', font=f_bb)
+    put(ws, r, 5, f'=SUM(E{f0}:E{r - 1})', fmt=EUR, font=f_bb)
+    FIN = f'$E${r}'
+    r += 2
+    put(ws, r, 1, 'Année par année', font=f_bb)
+    r += 1
+    header(ws, r, ['Année', 'Études', 'Travaux', 'Énergie', 'Entretien', 'Remplacements', 'Fin de vie', 'Aides', 'Total', 'Facteur', 'Total actualisé', 'Cumul'])
+    r += 1
+    y0 = r
+    for t in range(Y + 1):
+        a = f'$A{r}'
+        put(ws, r, 1, t)
+        put(ws, r, 2, f'=IF({a}=0,({HON}*{DEL}+{ETU})*(1+{TVA}),0)', fmt=EUR)
+        put(ws, r, 3, f'=IF({a}=0,{DEL}*(1+{TVA}),0)', fmt=EUR)
+        put(ws, r, 4, f'=IF({a}>=1,-{GAIN}*(1+{GE})^({a}-1),0)', fmt=EUR)
+        put(ws, r, 5, f'=IF({a}>=1,{MNT}*(1+{GC})^({a}-1)*(1+{TVA}),0)', fmt=EUR)
+        terms = '+'.join(f'IF(AND({a}>0,{a}<{Y},MOD({a},$B${x})=0),$E${x},0)' for x in RP)
+        put(ws, r, 6, f'=({terms})*(1+{GC})^{a}*(1+{TVA})', fmt=EUR)
+        put(ws, r, 7, f'=IF({a}={Y},{FIN}*(1+{GC})^{a}*(1+{TVA}),0)', fmt=EUR)
+        put(ws, r, 8, f'=IF(AND({TF}=1,{a}>=26,{a}<=30),-{TFA}*(1+{GC})^({a}-1),0)', fmt=EUR)
+        put(ws, r, 9, f'=SUM(B{r}:H{r})', fmt=EUR)
+        put(ws, r, 10, f'=1/(1+{ACT})^{a}', fmt='0.000')
+        put(ws, r, 11, f'=I{r}*J{r}', fmt=EUR)
+        put(ws, r, 12, f'=K{r}' if t == 0 else f'=L{r - 1}+K{r}', fmt=EUR)
+        r += 1
+    y1 = r - 1
+    put(ws, r, 1, f'Total sur {Y} ans (actualisé)', font=f_bb)
+    for col in 'BCDEFGHI':
+        put(ws, r, ord(col) - 64, f'=SUMPRODUCT({col}{y0}:{col}{y1},$J${y0}:$J${y1})', fmt=EUR, font=f_bb)
+    CG = {'total': f"'Coût global 50 ans'!I{r}", 'loc': f"'Coût global 50 ans'!D{r}",
+          'tfpb': f"'Coût global 50 ans'!B{r + 1}"}
+    r += 1
+    put(ws, r, 1, 'Taxe foncière évitée si l\'exonération est prolongée (années 26 à 30)', font=f_bb)
+    put(ws, r, 2, f'=SUMPRODUCT(({"$A$" + str(y0)}:$A${y1}>=26)*($A${y0}:$A${y1}<=30)*{TFA}*(1+{GC})^($A${y0}:$A${y1}-1)*$J${y0}:$J${y1})', fmt=EUR, font=f_bb)
+    r += 2
+    put(ws, r, 1, 'Aides financières et fiscales', font=f_bb)
+    r += 1
+    header(ws, r, ['Aide', 'Statut', 'Conditions', '', '', 'Sources'])
+    r += 1
+    for a_ in Cy['aides']:
+        put(ws, r, 1, a_['titre'], al=wrap)
+        put(ws, r, 2, a_['statut'])
+        ws.merge_cells(start_row=r, start_column=3, end_row=r, end_column=5)
+        c = ws.cell(row=r, column=3, value=a_['conditions'])
+        c.font = f_b
+        c.alignment = wrap
+        put(ws, r, 6, '; '.join(SOURCES[x]['titre'] for x in a_['src']), font=f_note, al=wrap)
+        ws.row_dimensions[r].height = 15 * max(2, math.ceil(len(a_['conditions']) / 60))
+        r += 1
+    ws.freeze_panes = 'A4'
+
     # ---- Synthèse (première feuille utile)
     ws = sheet('Synthèse', [52, 18, 18, 54])
     wb.move_sheet('Synthèse', offset=-(len(wb.sheetnames) - 2))
@@ -845,6 +1066,9 @@ def build_xlsx(data, path):
         ('Bilan annuel (énergie − entretien)', f"={EXP['bilan']}", '€/an', 'Énergie économisée moins entretien supplémentaire'),
         ('CO₂ évité en exploitation', f"={EXP['co2']}/1000", 'tCO₂e/an', 'Chaleur du réseau à 0,034 kgCO₂e/kWh'),
         (f"Bilan cumulé sur {E['duree']} ans, surcoût déduit", f"={EXP['cum']}", '€', ''),
+        (f"Coût global net sur {data['cycle']['annees']} ans", f"={CG['total']}", '€', 'Feuille Coût global : études, travaux, énergie, entretien, remplacements, fin de vie, aides (selon la case taxe foncière)'),
+        ('dont énergie économisée par les locataires', f"={CG['loc']}", '€', ''),
+        ('Taxe foncière évitée si l\'exonération est prolongée', f"={CG['tfpb']}", '€', 'Conditionnelle : seuils RE2020 2028 et certification'),
     ]
     for i, (a, f, u, n) in enumerate(lines, 4):
         put(ws, i, 1, a)
@@ -1054,6 +1278,49 @@ def build_pdf(data, D, path):
     S.append(P(f"Prix : chaleur {fmt(pr['prix_chaleur'], 2)} € TTC/MWh, électricité {fmt(pr['prix_elec'], 4)} € TTC/kWh. CO₂ : chaleur {fmt(pr['co2_chaleur'], 3)}, électricité {fmt(pr['co2_elec'], 3)} kgCO₂e/kWh. {E['note']}", 'small'))
     S.append(PageBreak())
 
+    Cy = data['cycle']
+    cg, cgt = D['cycle'], D['cycle_tfpb']
+    S.append(P(f"Coût global sur {Cy['annees']} ans", 'h2'))
+    S.append(P(Cy['note'], 'p'))
+    S.append(Spacer(1, 6))
+    k = [(f"{'+' if cg['total'] > 0 else '−'}{fmt(abs(cg['total']))} €", 'Coût global net de la variante, sans aide', 'Pas remboursée en 50 ans' if cg['retour'] is None else f"Remboursée en {cg['retour']} ans"),
+         (f"{fmt(cg['totaux']['conception'] + cg['totaux']['travaux'])} €", 'Études et travaux (bailleur, TVA comprise)', f"TVA {fmt(Cy['params']['tva'], 1)} %"),
+         (f"{fmt(-cg['totaux']['energie'])} €", 'Énergie économisée sur 50 ans', 'Par les locataires (charges)'),
+         (f"{'+' if cgt['total'] > 0 else '−'}{fmt(abs(cgt['total']))} €", 'Avec la taxe foncière prolongée', f"{fmt(cgt['tfpb_potentiel'])} € évités, si conditions remplies")]
+    cells = [[[P(a, 'kpi'), P(b, 'kpil'), P(c, 'small')] for a, b, c in k]]
+    t = Table(cells, colWidths=[W / 4] * 4)
+    t.setStyle(TableStyle([('BACKGROUND', (0, 0), (-1, -1), BG), ('VALIGN', (0, 0), (-1, -1), 'TOP'), ('LINEAFTER', (0, 0), (-2, -1), 3, colors.white),
+                           ('TOPPADDING', (0, 0), (-1, -1), 8), ('BOTTOMPADDING', (0, 0), (-1, -1), 8), ('LEFTPADDING', (0, 0), (-1, -1), 8)]))
+    S.append(t)
+    S.append(Spacer(1, 6))
+    T_ = cg['totaux']
+    steps = sorted({t_ for rp in Cy['remplacements'] for t_ in range(rp['duree'], Cy['annees'], rp['duree'])})
+    rows = [[H('Poste'), H('Quand'), H('Qui paie'), H('Sur 50 ans')],
+            [P('Études (honoraires sur le surcoût et études propres à la variante)'), P('Avant les travaux'), P('Bailleur'), P(fmt(T_['conception']), 'num')],
+            [P('Travaux (surcoût de la variante)'), P('Construction'), P('Bailleur'), P(fmt(T_['travaux']), 'num')],
+            [P('Énergie économisée'), P('Chaque année'), P('Locataires'), P(fmt(T_['energie']), 'num')],
+            [P('Entretien supplémentaire'), P('Chaque année'), P('Bailleur (en partie dans les charges)'), P(fmt(T_['entretien']), 'num')],
+            [P('Remplacements'), P('Années ' + ', '.join(map(str, steps))), P('Bailleur'), P(fmt(T_['remplacements']), 'num')],
+            [P('Fin de vie'), P(f"Année {Cy['annees']}"), P('Bailleur'), P(fmt(T_['fin']), 'num')],
+            [P('Aides acquises'), P('—'), P('—'), P(fmt(T_['aides']), 'num')],
+            [P('Coût global net', 'cellb'), P(''), P(f"Bailleur {fmt(cg['bailleur'])} · locataires {fmt(cg['locataires'])}"), P(fmt(cg['total']), 'num')]]
+    S.append(KeepTogether([table(rows, [W * 0.45, W * 0.2, W * 0.2, W * 0.15])]))
+    S.append(Spacer(1, 6))
+    rows = [[H('Aide'), H('Statut'), H('Conditions'), H('Montant')]]
+    for a_ in Cy['aides']:
+        m = f"{fmt(cgt['tfpb_potentiel'])} € (années 26 à 30)" if a_['id'] == 'tfpb' else ('0 €' if a_.get('montant') == 0 else '—')
+        src = '; '.join(SOURCES[x]['titre'] for x in a_['src'])
+        rows.append([P(a_['titre'], 'cellb'), P(a_['statut']), P(a_['conditions'] + ' — ' + src, 'small'), P(m, 'num')])
+    S.append(KeepTogether([P('Aides financières et fiscales', 'h2'), table(rows, [W * 0.2, W * 0.1, W * 0.55, W * 0.15])]))
+    S.append(Spacer(1, 6))
+    rows = [[H('Remplacement'), H('Durée de vie'), H('A1 € HT'), H('A2 € HT'), H('Note')]]
+    for rp in Cy['remplacements']:
+        rows.append([P(rp['poste']), P(f"{rp['duree']} ans", 'num'), P(fmt(rp['A1']), 'num'), P(fmt(rp['A2']), 'num'), P(rp['note'] + ' — ' + '; '.join(SOURCES[x]['titre'] for x in rp['src']), 'small')])
+    for f in Cy['fin_de_vie']:
+        rows.append([P('Fin de vie : ' + f['poste']), P(f"année {Cy['annees']}", 'num'), P(''), P(fmt(f['qte'] * f['pu']), 'num'), P(f"{fmt(f['qte'], 1 if f['unite'] == 'm³' else 0)} {f['unite']} × {fmt(f['pu'])} € HT. {f['note']}", 'small')])
+    S.append(KeepTogether([P('Remplacements et fin de vie', 'h2'), table(rows, [W * 0.3, W * 0.1, W * 0.1, W * 0.1, W * 0.4])]))
+    S.append(PageBreak())
+
     S.append(P('Sources et hypothèses', 'h2'))
     S.append(P("Règle de comptage : pour la tour A1, les équipements de chauffage, ventilation et ECS prévus au CCTP sont comptés même s'ils ne sont pas modélisés (« CCTP, non modélisé ») ; pour la tour A2, ce sont les éléments de la variante. "
                "Les dénombrements par pièce (radiateurs, bouches, entrées d'air) suivent les plans CVC des logements types appliqués aux typologies.", 'small'))
@@ -1078,17 +1345,28 @@ def main():
     for z in ('A1', 'A2'):
         k['vent_' + z] = E['tours'][z]['ventilation'] / E['tours'][z]['shab']
     D = defaults(C, E)
+    Cy = cycle(C, E)
+    D['cycle'] = cycle_totals(Cy, D, E)
+    D['cycle_tfpb'] = cycle_totals(Cy, D, E, {'tfpb': True})
     data = {
         'schema': 1, 'genere': TODAY,
         'tours': {'A1': {'nom': 'Tour A1 — COGEDIM', 'conception': 'DCE — RT 2012', 'logements': k['n1'], 'shab': round(k['shab']['A1'], 1), 'typologies': k['typ']['A1']},
                   'A2': {'nom': 'Tour A2 — CDC Habitat', 'conception': 'Variante RE2020 du groupe', 'logements': k['n2'], 'shab': round(k['shab']['A2'], 1), 'typologies': k['typ']['A2']}},
         'typologies': TYPO, 'fiab': FIAB, 'sources': SOURCES,
-        'lots': lots(k), 'quantites': Q, 'couts': C, 'exploitation': E, 'defauts': D, 'attention': attention(k, D),
+        'lots': lots(k), 'quantites': Q, 'couts': C, 'exploitation': E, 'cycle': Cy, 'defauts': D, 'attention': attention(k, D),
         'documents': [
             {'titre': 'Classeur Excel', 'detail': 'Quantités, coûts et exploitation avec formules ; hypothèses modifiables', 'fichier': f'docs/{BASE_NAME}.xlsx'},
             {'titre': 'Synthèse PDF', 'detail': 'Format A4 paysage, à joindre au rapport', 'fichier': f'docs/{BASE_NAME}.pdf'},
         ],
     }
+    cg, cgt = D['cycle'], D['cycle_tfpb']
+    eur = lambda v: f'{abs(v):,.0f}'.replace(',', '\u202f') + ' €'
+    data['attention'].insert(1, {'niveau': 'fort', 'titre': 'Sur 50 ans, l\'énergie ne rembourse pas la variante ; la taxe foncière pourrait le faire',
+        'texte': f"En coût global sur 50 ans (études, travaux, énergie, entretien, remplacements et fin de vie), la variante coûte {eur(cg['total'])} de {'plus' if cg['total'] > 0 else 'moins'} que la conception du DCE : "
+                 f"les locataires économisent {eur(-cg['locataires'])} d'énergie, le bailleur dépense {eur(cg['bailleur'])} de plus. "
+                 f"Les CEE ne s'appliquent pas en construction neuve et le Fonds Chaleur solaire est fermé depuis le 4 novembre 2026. "
+                 f"Seule l'exonération de taxe foncière prolongée de 25 à 30 ans (si la tour A2 atteint les seuils RE2020 de 2028 et obtient une certification) change le bilan : "
+                 f"{eur(cgt['tfpb_potentiel'])} de taxe évitée, et la variante {'coûte encore ' + eur(cgt['total']) + ' de plus' if cgt['total'] > 0 else 'rapporte ' + eur(cgt['total'])} sur 50 ans."})
     os.makedirs(os.path.dirname(OUT_JSON), exist_ok=True)
     os.makedirs(OUT_DIR, exist_ok=True)
     with open(OUT_JSON, 'w', encoding='utf-8') as fh:

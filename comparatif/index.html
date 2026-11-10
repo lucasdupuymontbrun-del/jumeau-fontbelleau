@@ -60,6 +60,7 @@
       <li><a href="#quantites">Quantités</a></li>
       <li><a href="#couts">Coûts de travaux</a></li>
       <li><a href="#exploitation">Exploitation</a></li>
+      <li><a href="#cout-global">Coût global</a></li>
       <li><a href="#carbone">Carbone</a></li>
       <li><a href="#sources">Sources</a></li>
     </ul>
@@ -138,6 +139,31 @@
       <div class="table-wrap"><table class="cmp-table" data-bind="gains"></table></div>
       <h3 class="sub">Entretien <span class="cmp-hint">Hypothèses à confirmer avec les contrats d'exploitation</span></h3>
       <div class="table-wrap"><table class="cmp-table" data-bind="maint"></table></div>
+    </div>
+  </section>
+
+  <section class="sec" id="cout-global" aria-labelledby="h-cg">
+    <div class="sec-head">
+      <h2 id="h-cg">Coût global sur 50 ans</h2>
+      <p>Ce que la variante coûte ou rapporte de plus que la conception du DCE pendant la vie du bâtiment : études, travaux, énergie, entretien, remplacements, démolition et aides.</p>
+      <form class="cmp-form" data-bind="cg-form" onsubmit="return false"></form>
+    </div>
+    <div class="sec-body">
+      <div class="cmp-kpis cg-kpis" data-bind="cg-kpis" aria-live="polite"></div>
+      <div class="card chart-card">
+        <div class="cc-head"><h3>Coût cumulé de la variante, année par année</h3><p data-bind="cg-sub"></p></div>
+        <div class="chart" data-bind="cg-chart"></div>
+        <div class="cg-legend" data-bind="cg-legend"></div>
+      </div>
+      <h3 class="sub">Détail sur 50 ans <span class="cmp-hint">Écart de la tour A2, en euros courants</span></h3>
+      <div class="table-wrap"><table class="cmp-table cg-table" data-bind="cg-table"></table></div>
+      <h3 class="sub">Aides financières et fiscales</h3>
+      <div class="cg-aides" data-bind="cg-aides"></div>
+      <details class="cmp-details">
+        <summary>Remplacements et fin de vie</summary>
+        <div class="table-wrap"><table class="cmp-table" data-bind="cg-rempl"></table></div>
+        <div class="table-wrap"><table class="cmp-table" data-bind="cg-fin"></table></div>
+      </details>
     </div>
   </section>
 

@@ -244,3 +244,30 @@
 /* couleurs Veck : or pour la marque, A2 en orange comme sa série */
 .cmp-vs { color: #7a5c33; }
 .tower[data-t="A2"] .ttag { background: rgba(235, 104, 52, .12); color: #a13d12; }
+
+/* ---------- coût global sur 50 ans ---------- */
+.cg-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0 0 14px; max-width: none; padding: 0; }
+.cg-check { display: flex !important; align-items: center; gap: 8px; }
+.cg-check input { width: 18px; height: 18px; accent-color: #22764a; }
+.cmp-form select { padding: 8px 10px; border: 1.5px solid var(--trait-fort); border-radius: var(--r-s); background: #fffbe6; font: inherit; color: #1a3fb0; max-width: 320px; }
+.cg-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 8px; font-size: 13px; color: var(--ardoise); }
+.cg-l { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; color: var(--graphite); }
+.cg-l::before { content: ''; width: 22px; height: 0; border-top: 3px solid var(--c); }
+.cg-l.is-dash::before { border-top-style: dashed; }
+.cg-n { flex-basis: 100%; }
+.cg-aides { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.cg-aide { background: var(--blanc); border: 1px solid var(--trait); border-left: 4px solid var(--trait-fort); border-radius: var(--r-m); padding: 12px 14px; }
+.cg-aide.is-cond { border-left-color: #22764a; }
+.cg-aide.is-info { border-left-color: var(--a1); }
+.cg-aide p { margin: 6px 0 0; font-size: 13.5px; }
+.cg-aide-h { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.cg-st { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 99px; background: #eef0ee; color: var(--ardoise); white-space: nowrap; }
+.cg-aide.is-cond .cg-st { background: #e3f2e8; color: #1b5e3a; }
+.cg-aide.is-info .cg-st { background: #e6effa; color: #1c4f8f; }
+.cg-amt { font-weight: 700; }
+.cg-src { font-size: 12px !important; color: var(--ardoise); }
+@media (max-width: 760px) {
+  .cg-kpis { grid-template-columns: 1fr 1fr; }
+  .cg-aides { grid-template-columns: 1fr; }
+  .cg-table th:nth-child(2), .cg-table td:nth-child(2) { display: none; }
+}

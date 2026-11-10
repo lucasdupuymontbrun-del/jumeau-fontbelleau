@@ -1,5 +1,5 @@
-/* Jumeau énergétique — vue de nuit.
-   Matière : béton de nuit, fenêtres allumées, marquage au traceur rose du passeport, or du logo Veck. */
+/* Jumeau énergétique — vue à l'heure bleue (ciel bleu, logements allumés).
+   Matière : béton du soir, fenêtres allumées, marquage au traceur rose du passeport, or du logo Veck. */
 
 @font-face {
   font-family: 'Archivo Variable';
@@ -629,3 +629,8 @@ a { color: inherit; }
 .btn-tour-top:hover { background: rgba(255, 61, 139, .26); border-color: var(--traceur); color: #fff; }
 .btn-tour-top .ico { width: 13px; height: 13px; }
 .in-tour .btn-tour-top { background: var(--traceur); border-color: var(--traceur); color: #fff; }
+
+/* ciel de jour : date lisible sur fond clair */
+[data-ciel="jour"] .stage-date { text-shadow: 0 1px 14px rgba(255, 255, 255, .55); color: #0f1d2a; }
+[data-ciel="jour"] .sd-meta { color: #2a3a48; }
+[data-ciel="bleue"] .topbar, [data-ciel="jour"] .topbar { background: linear-gradient(180deg, rgba(10, 14, 18, .55), rgba(10, 14, 18, 0)); }

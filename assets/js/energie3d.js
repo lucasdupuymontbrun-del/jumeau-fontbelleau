@@ -30,11 +30,55 @@ async function fetchGeometry(base) {
 // Revit (m, z vers le haut) → three (y vers le haut)
 const toThree = (x, y, z) => [x, z, -y];
 
-function gradientTexture() {
+// Ambiances : nuit (d'origine), heure bleue (ciel bleu, logements toujours allumés), jour (ciel bleu, béton clair)
+const SKIES = {
+  nuit: {
+    sky: [[0, '#05080b'], [0.55, '#0b1218'], [0.82, '#16202a'], [1, '#2a2620']],
+    fog: [0x0b1218, 0.0062], hemi: [0x3a5068, 0x07090b, 0.9], key: [0xa9c2ff, 1.1], warm: 0.18, exposure: 0.95,
+    mat: 1, tint: null, ground: [[0.028, 0.040, 0.050], [0.10, 0.15, 0.19], 0.10], ring: 0x5b7180, bloom: 0.7, day: 0,
+  },
+  bleue: {
+    dome: ['#e6b08a', '#8fb0d8', '#4677b8', '#10265a'], haze: '#40608a',
+    fog: [0x40608a, 0.0036], hemi: [0x7fa3d6, 0x0e1622, 1.15], key: [0xc3d6ff, 1.25], warm: 0.32, exposure: 1.0,
+    mat: 1.9, tint: [0.92, 1.0, 1.18], ground: [[0.030, 0.048, 0.078], [0.13, 0.19, 0.27], 0.16], ring: 0x7d97b4, bloom: 0.62, day: 0, low: true,
+  },
+  jour: {
+    dome: ['#eef4f8', '#9cc6ec', '#4f93d8', '#1f5fae'], haze: '#d3e2ec',
+    fog: [0xd3e2ec, 0.0022], hemi: [0xe6f0fa, 0x8d8f84, 1.25], key: [0xfff4e6, 2.2], warm: 0.0, exposure: 1.0,
+    mat: 0, tint: null, ground: [[0.22, 0.26, 0.20], [0.15, 0.18, 0.14], 0.0], ring: 0x8a949b, bloom: 0.08, day: 1, low: true,
+  },
+};
+const DAY_MAT = { walls: 0xd2d4d0, floors: 0xbfc2bd, frame: 0xc9ccc8, stairs: 0xb9bcb7, rail: 0x7d868c, generic: 0xa9aeab, vmc: 0x9aa6ae,
+  parking: 0x9da29b, ext: 0xa7ab9f, lt: 0xb6ad9b };
+
+// Dôme de ciel : couleur selon la hauteur du regard (horizon, bas du ciel, milieu, zénith)
+function skyDome(cols, haze) {
+  const [h0, h1, h2, h3] = cols.map(c => new THREE.Color(c));
+  const m = new THREE.ShaderMaterial({
+    uniforms: { c0: { value: h0 }, c1: { value: h1 }, c2: { value: h2 }, c3: { value: h3 }, cz: { value: new THREE.Color(haze) } },
+    vertexShader: `varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position,1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+    fragmentShader: `
+      uniform vec3 c0; uniform vec3 c1; uniform vec3 c2; uniform vec3 c3; uniform vec3 cz; varying vec3 vW;
+      void main(){
+        float h = normalize(vW - cameraPosition).y;
+        vec3 col = h < 0.0 ? mix(c0, cz, smoothstep(0.0, -0.03, h))
+          : h < 0.03 ? mix(c0, c1, h / 0.03)
+          : h < 0.12 ? mix(c1, c2, (h - 0.03) / 0.09)
+          : mix(c2, c3, smoothstep(0.12, 0.6, h));
+        gl_FragColor = vec4(col, 1.0);
+      }`,
+    side: THREE.BackSide, depthWrite: false, fog: false,
+  });
+  const d = new THREE.Mesh(new THREE.SphereGeometry(1400, 48, 24), m);
+  d.renderOrder = -10; d.frustumCulled = false;
+  return d;
+}
+
+function gradientTexture(stops = SKIES.nuit.sky) {
   const c = document.createElement('canvas'); c.width = 4; c.height = 512;
   const g = c.getContext('2d');
   const gr = g.createLinearGradient(0, 0, 0, 512);
-  gr.addColorStop(0, '#05080b'); gr.addColorStop(0.55, '#0b1218'); gr.addColorStop(0.82, '#16202a'); gr.addColorStop(1, '#2a2620');
+  for (const [o, col] of stops) gr.addColorStop(o, col);
   g.fillStyle = gr; g.fillRect(0, 0, 4, 512);
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
 }
@@ -47,7 +91,7 @@ const CLIP_FRAG = '#include <clipping_planes_fragment>';
 // Volumes des logements : un seul maillage, couleur et intensité lues dans une texture (1 texel par logement)
 function sectorMaterial(tex, n) {
   return new THREE.ShaderMaterial({
-    uniforms: { uTex: { value: tex }, uN: { value: n }, uSel: { value: -1 }, uTime: { value: 0 }, uHover: { value: -1 } },
+    uniforms: { uTex: { value: tex }, uN: { value: n }, uSel: { value: -1 }, uTime: { value: 0 }, uHover: { value: -1 }, uDay: { value: 0 } },
     vertexShader: `
       attribute float aLog;
       varying vec3 vN; varying vec3 vV; varying float vLog; varying float vH;
@@ -60,7 +104,7 @@ function sectorMaterial(tex, n) {
         ${CLIP_VERT}
       }`,
     fragmentShader: `
-      uniform sampler2D uTex; uniform float uN; uniform float uSel; uniform float uTime; uniform float uHover;
+      uniform sampler2D uTex; uniform float uN; uniform float uSel; uniform float uTime; uniform float uHover; uniform float uDay;
       varying vec3 vN; varying vec3 vV; varying float vLog; varying float vH;
       ${CLIP_FRAG_PARS}
       void main(){
@@ -74,6 +118,13 @@ function sectorMaterial(tex, n) {
         vec3 col = c.rgb * (0.05 + 0.30 * k + 0.55 * fr * (0.3 + k));
         col += vec3(1.0, 0.24, 0.55) * sel * (0.25 + 0.7 * fr) * pulse;
         col += vec3(1.0) * hov * 0.06;
+        if (uDay > 0.5) {
+          vec3 d = pow(c.rgb, vec3(2.2)) * (0.75 + 0.25 * k) * (0.85 + 0.2 * fr);
+          d = mix(d, vec3(1.0, 0.24, 0.55), sel * (0.35 + 0.35 * pulse));
+          d += vec3(1.0) * hov * 0.08;
+          gl_FragColor = vec4(d, 0.55 + 0.4 * k);
+          return;
+        }
         gl_FragColor = vec4(col, 1.0);
       }`,
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, clipping: true,
@@ -83,7 +134,7 @@ function sectorMaterial(tex, n) {
 // Vitrages : couleur du logement desservi (attribut aLog), communs en lumière chaude faible
 function glassMaterial(tex, n) {
   return new THREE.ShaderMaterial({
-    uniforms: { uTex: { value: tex }, uN: { value: n } },
+    uniforms: { uTex: { value: tex }, uN: { value: n }, uDay: { value: 0 } },
     vertexShader: `
       attribute float aLog; varying float vLog;
       ${CLIP_VERT_PARS}
@@ -94,7 +145,7 @@ function glassMaterial(tex, n) {
         ${CLIP_VERT}
       }`,
     fragmentShader: `
-      uniform sampler2D uTex; uniform float uN; varying float vLog;
+      uniform sampler2D uTex; uniform float uN; uniform float uDay; varying float vLog;
       ${CLIP_FRAG_PARS}
       void main(){
         ${CLIP_FRAG}
@@ -103,7 +154,9 @@ function glassMaterial(tex, n) {
         else {
           vec4 c = texture2D(uTex, vec2((vLog + 0.5) / uN, 0.5));
           col = c.rgb * (0.05 + 0.25 * c.a + 1.05 * c.a * c.a * c.a);
+          if (uDay > 0.5) col = mix(vec3(0.16, 0.22, 0.28), pow(c.rgb, vec3(2.2)), 0.55 + 0.45 * c.a);
         }
+        if (uDay > 0.5 && vLog < 0.0) col = vec3(0.16, 0.22, 0.28);
         gl_FragColor = vec4(col, 1.0);
       }`,
     side: THREE.DoubleSide, clipping: true, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
@@ -112,20 +165,23 @@ function glassMaterial(tex, n) {
 
 function groundMaterial() {
   return new THREE.ShaderMaterial({
-    uniforms: { uC1: { value: new THREE.Vector2(0, 0) }, uC2: { value: new THREE.Vector2(0, 0) } },
+    uniforms: { uC1: { value: new THREE.Vector2(0, 0) }, uC2: { value: new THREE.Vector2(0, 0) },
+      uBase: { value: new THREE.Vector3(0.028, 0.040, 0.050) }, uGrid: { value: new THREE.Vector3(0.10, 0.15, 0.19) }, uGlow: { value: 0.10 }, uDay: { value: 0 },
+      uHaze: { value: new THREE.Color(0, 0, 0) }, uHazeK: { value: 0 } },
     vertexShader: `varying vec2 vP; void main(){ vec4 w = modelMatrix * vec4(position,1.0); vP = w.xz; gl_Position = projectionMatrix * viewMatrix * w; }`,
     fragmentShader: `
-      uniform vec2 uC1; uniform vec2 uC2; varying vec2 vP;
+      uniform vec2 uC1; uniform vec2 uC2; uniform vec3 uBase; uniform vec3 uGrid; uniform float uGlow; uniform float uDay; uniform vec3 uHaze; uniform float uHazeK; varying vec2 vP;
       float grid(vec2 p, float s){ vec2 g = abs(fract(p / s - 0.5) - 0.5) / fwidth(p / s); return 1.0 - min(min(g.x, g.y), 1.0); }
       void main(){
         vec2 mid = (uC1 + uC2) * 0.5;
         float d = length(vP - mid);
         float fade = smoothstep(150.0, 20.0, d);
         float g = grid(vP, 5.0) * 0.55 + grid(vP, 25.0) * 0.6;
-        vec3 base = vec3(0.028, 0.040, 0.050);
-        vec3 col = base + vec3(0.10, 0.15, 0.19) * g * fade * 0.55;
+        vec3 base = uBase;
+        vec3 col = uDay > 0.5 ? mix(base, uGrid, g * fade * 0.35) : base + uGrid * g * fade * 0.55;
         float glow = exp(-pow(length(vP - uC1) / 22.0, 2.0)) + exp(-pow(length(vP - uC2) / 22.0, 2.0));
-        col += vec3(0.85, 0.55, 0.25) * glow * 0.10;
+        col += vec3(0.85, 0.55, 0.25) * glow * uGlow;
+        col = mix(col, uHaze, uHazeK * smoothstep(70.0, 360.0, length(vP - mid)));
         gl_FragColor = vec4(col, 1.0);
       }`,
     extensions: { derivatives: true },
@@ -188,19 +244,21 @@ export async function createTwin(container, opts) {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, coarse ? 1.5 : 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 0.95;
+  const SKY = SKIES[opts.ciel] || SKIES.bleue; // heure bleue par défaut ; ?ciel=nuit ou ?ciel=jour pour les autres ambiances
+  renderer.toneMappingExposure = SKY.exposure;
   renderer.localClippingEnabled = true;
   ui.canvas.appendChild(renderer.domElement);
   renderer.domElement.setAttribute('role', 'img');
-  renderer.domElement.setAttribute('aria-label', 'Vue 3D de nuit des deux tours : chaque logement est éclairé selon sa consommation. Faites glisser pour tourner, pincez ou utilisez la molette pour zoomer, touchez un logement pour son détail.');
+  renderer.domElement.setAttribute('aria-label', 'Vue 3D des deux tours à l\'heure bleue : chaque logement est éclairé selon sa consommation. Faites glisser pour tourner, pincez ou utilisez la molette pour zoomer, touchez un logement pour son détail.');
 
   const scene = new THREE.Scene();
-  scene.background = gradientTexture();
-  scene.fog = new THREE.FogExp2(0x0b1218, 0.0062);
+  if (SKY.dome) { scene.background = new THREE.Color(SKY.haze); scene.add(skyDome(SKY.dome, SKY.haze)); }
+  else scene.background = gradientTexture(SKY.sky);
+  scene.fog = new THREE.FogExp2(...SKY.fog);
   const camera = new THREE.PerspectiveCamera(34, 1, 0.5, 2500);
-  scene.add(new THREE.HemisphereLight(0x3a5068, 0x07090b, 0.9));
-  const moon = new THREE.DirectionalLight(0xa9c2ff, 1.1); moon.position.set(-60, 90, 40); scene.add(moon);
-  const warm = new THREE.DirectionalLight(0xffb37a, 0.18); warm.position.set(50, 10, -60); scene.add(warm);
+  scene.add(new THREE.HemisphereLight(...SKY.hemi));
+  const moon = new THREE.DirectionalLight(...SKY.key); moon.position.set(SKY.day ? 50 : -60, SKY.day ? 110 : 90, SKY.day ? 60 : 40); scene.add(moon);
+  const warm = new THREE.DirectionalLight(0xffb37a, SKY.warm); warm.position.set(50, 10, -60); scene.add(warm);
 
   const cut = new THREE.Plane(new THREE.Vector3(0, -1, 0), 1000);
   const clips = [cut];
@@ -235,11 +293,14 @@ export async function createTwin(container, opts) {
         al.fill(li, s * 3, (s + n) * 3);
       }
       geo.setAttribute('aLog', new THREE.BufferAttribute(al, 1));
-      mat = glassMaterial(tex, N);
+      mat = glassMaterial(tex, N); mat.uniforms.uDay.value = SKY.day;
       mat.clippingPlanes = clips;
     } else {
       geo.computeVertexNormals();
-      mat = new THREE.MeshStandardMaterial({ color: DARK[kind] ?? 0x1e262d, roughness: 0.92, metalness: 0.05, side: THREE.DoubleSide,
+      let col = new THREE.Color(DARK[kind] ?? 0x1e262d);
+      if (SKY.day) col = new THREE.Color(DAY_MAT[kind] ?? 0xc4c7c3);
+      else if (SKY.mat !== 1) { col.multiplyScalar(SKY.mat); if (SKY.tint) { col.r *= SKY.tint[0]; col.g *= SKY.tint[1]; col.b *= SKY.tint[2]; } }
+      mat = new THREE.MeshStandardMaterial({ color: col, roughness: 0.92, metalness: 0.05, side: THREE.DoubleSide,
         clippingPlanes: ['parking', 'ext'].includes(g.name) ? [] : clips, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
     }
     geo.computeBoundingBox();
@@ -257,11 +318,14 @@ export async function createTwin(container, opts) {
   ground.rotation.x = -Math.PI / 2; ground.position.y = -0.05;
   const c1 = toThree(C.A1[0], C.A1[1], 0), c2 = toThree(C.A2[0], C.A2[1], 0);
   ground.material.uniforms.uC1.value.set(c1[0], c1[2]); ground.material.uniforms.uC2.value.set(c2[0], c2[2]);
+  ground.material.uniforms.uBase.value.set(...SKY.ground[0]); ground.material.uniforms.uGrid.value.set(...SKY.ground[1]);
+  ground.material.uniforms.uGlow.value = SKY.ground[2]; ground.material.uniforms.uDay.value = SKY.day;
+  if (SKY.haze) { ground.material.uniforms.uHaze.value.set(SKY.haze); ground.material.uniforms.uHazeK.value = 1; }
   scene.add(ground);
 
   // anneaux des planchers (lecture des étages)
   const rings = new THREE.Group(); scene.add(rings);
-  const ringMat = new THREE.LineBasicMaterial({ color: 0x5b7180, transparent: true, opacity: 0.45, clippingPlanes: clips });
+  const ringMat = new THREE.LineBasicMaterial({ color: SKY.ring, transparent: true, opacity: 0.45, clippingPlanes: clips });
   const ringSel = new THREE.LineBasicMaterial({ color: 0xc9a46a, transparent: true, opacity: 0.95 });
   const ringByFloor = {};
   for (const z of ['A1', 'A2']) {
@@ -280,6 +344,7 @@ export async function createTwin(container, opts) {
   // logements
   const secGeo = sectorGeometry(logements, C, floor0);
   const secMat = sectorMaterial(tex, N);
+  if (SKY.day) { secMat.uniforms.uDay.value = 1; secMat.blending = THREE.NormalBlending; }
   secMat.clippingPlanes = clips;
   const sectors = new THREE.Mesh(secGeo, secMat);
   sectors.renderOrder = 5;
@@ -309,10 +374,12 @@ export async function createTwin(container, opts) {
   }
   const mid = new THREE.Vector3((c1[0] + c2[0]) / 2, 14, (c1[2] + c2[2]) / 2);
   const towerC = { A1: new THREE.Vector3(c1[0], 15, c1[2]), A2: new THREE.Vector3(c2[0], 15, c2[2]) };
+  // caméra plus basse quand le ciel compte (heure bleue, jour), un peu plus reculée sur une tour seule pour garder le toit
+  const LOW = SKY.low ? 0.3 : 1, LOWT = SKY.low ? 0.55 : 1, BACK = SKY.low ? 1.12 : 1;
   const VIEWS = {
-    ALL: { t: mid.clone(), p: mid.clone().add(new THREE.Vector3(92, 46, 84)) },
-    A1: { t: towerC.A1.clone(), p: towerC.A1.clone().add(new THREE.Vector3(52, 24, 44)) },
-    A2: { t: towerC.A2.clone(), p: towerC.A2.clone().add(new THREE.Vector3(52, 24, 44)) },
+    ALL: { t: mid.clone(), p: mid.clone().add(new THREE.Vector3(92, 46 * LOW, 84)) },
+    A1: { t: towerC.A1.clone(), p: towerC.A1.clone().add(new THREE.Vector3(52 * BACK, 24 * LOWT, 44 * BACK)) },
+    A2: { t: towerC.A2.clone(), p: towerC.A2.clone().add(new THREE.Vector3(52 * BACK, 24 * LOWT, 44 * BACK)) },
   };
   let tween = null;
   function flyTo(p, t, ms = 1100) {
@@ -326,7 +393,7 @@ export async function createTwin(container, opts) {
   const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
   const composer = new EffectComposer(renderer, rt);
   composer.addPass(new RenderPass(scene, camera));
-  const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.7, 0.42, 0.78);
+  const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), SKY.bloom, 0.42, SKY.day ? 0.95 : 0.78);
   composer.addPass(bloom);
   composer.addPass(new OutputPass());
 

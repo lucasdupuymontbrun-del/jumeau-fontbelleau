@@ -21,6 +21,8 @@ Couleurs : vert jusqu'à +20 % par rapport à des logements semblables, orange d
 
 Présentation pour l'oral : bouton « Présentation » en haut à droite, ou adresse `…/jumeau-fontbelleau/?presentation` pour la lancer à l'ouverture. Les textes des étapes sont calculés à partir des données (`tourSteps()` dans `assets/js/energie.js`) ; les textes simples des alertes (`titre_simple`, `resume`, `faire`) sont dans `ALERT_TEXT` de `tools/build_energie.py`.
 
+Ambiance de la vue 3D : « heure bleue » par défaut (ciel bleu, logements allumés). Deux autres ambiances restent disponibles par l'adresse : `?ciel=nuit` (fond noir d'origine) et `?ciel=jour` (béton clair, ciel de jour). Les couleurs du ciel, du sol et de la lumière sont dans `SKIES` de `assets/js/energie3d.js` ; la caméra est un peu plus basse en heure bleue et en jour pour que le ciel soit visible.
+
 ## 2. Mettre à jour après une modification de la maquette
 
 Les deux générateurs lisent le site du passeport (registre des ouvrages `data/index.json`, fiches `data/o/`, maquette 3D `model/`). Ils cherchent le dépôt `passeport-fontbelleau` à côté de celui-ci ; sinon, donner son chemin en argument ou dans la variable `FONTBELLEAU_PASSEPORT`.

@@ -971,8 +971,10 @@ async function main() {
 
   const params = new URLSearchParams(location.search);
   const centers = { A1: J.tours.A1.centre, A2: J.tours.A2.centre };
+  const ciel = ['nuit', 'bleue', 'jour'].includes(params.get('ciel')) ? params.get('ciel') : 'bleue';
+  document.body.dataset.ciel = ciel;
   S.twin = await createTwin($('#stage'), {
-    base: 'model/', logements: S.L, centers, floor0: LG.geometrie.plancher_r1, elementLog: S.index,
+    base: 'model/', ciel, logements: S.L, centers, floor0: LG.geometrie.plancher_r1, elementLog: S.index,
     onPick: (id) => { stop(); if (id) selectLogement(id, false); else if (!S.special) closeDetail(); },
     onHover: (id, x, y) => {
       const tip = $('[data-v="tip"]');

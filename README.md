@@ -6,7 +6,7 @@ En ligne : https://lucasdupuymontbrun-del.github.io/jumeau-fontbelleau/
 
 Démonstrateur réalisé pour le projet ESCT MP2-BC1-P3. Les consommations sont simulées (première année d'exploitation, octobre 2027 → septembre 2028) ; les logements, les ouvrages et les équipements viennent du DCE et de la maquette Revit `MQT-FONTBELLEAU-G4`.
 
-- Jumeau énergétique (QR code du jumeau) : `index.html` — 129 logements en 3D de nuit, consommations, alertes, comparaison A1 / A2, coût global
+- Jumeau énergétique (QR code du jumeau) : `index.html` — 129 logements en 3D à l'heure bleue, consommations, alertes, comparaison A1 / A2, coût global
 - Comparatif général A1 / A2 : `comparatif/` — solutions lot par lot, quantités, coûts par ratios, exploitation et carbone ; classeur Excel et PDF dans `comparatif/docs/`
 - Données : `data/energie/` (jumeau), `data/comparatif/` (comparatif), `model/` (maquette 3D, copie de celle du passeport)
 - Générateurs : `tools/build_energie.py`, `tools/build_comparatif.py`

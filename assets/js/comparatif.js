@@ -529,3 +529,11 @@ main().catch((e) => {
   console.error(e);
   bind('kpis').append(el('p', { class: 'warn', text: 'Le comparatif n\'a pas pu être chargé. Rechargez la page.' }));
 });
+
+// téléphone : l'essentiel (chiffres clés) juste après le titre, les documents ensuite
+{
+  const docs = document.querySelector('.cmp-docs'), kpis = document.querySelector('.cmp-kpis'), hero = document.querySelector('.cmp-hero');
+  const mq = matchMedia('(max-width: 760px)');
+  const place = () => { if (!docs || !kpis || !hero) return; if (mq.matches) kpis.after(docs); else hero.append(docs); };
+  mq.addEventListener('change', place); place();
+}

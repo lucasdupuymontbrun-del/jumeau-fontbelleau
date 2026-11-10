@@ -77,7 +77,7 @@
     </div>
   </section>
 
-  <section class="sec" id="lots" aria-labelledby="h-lots">
+  <section class="sec" id="lots" aria-labelledby="h-lots" data-fold="Afficher les lots">
     <div class="sec-head">
       <h2 id="h-lots">Lot par lot</h2>
       <p>Solution de chaque tour, d'après les CCTP du marché et la variante modélisée.</p>
@@ -89,7 +89,7 @@
     <div class="sec-body" data-bind="lots"></div>
   </section>
 
-  <section class="sec" id="quantites" aria-labelledby="h-qte">
+  <section class="sec" id="quantites" aria-labelledby="h-qte" data-fold="Afficher les quantités">
     <div class="sec-head">
       <h2 id="h-qte">Quantités</h2>
       <p>Chaque valeur porte son origine : mesurée dans la maquette, prévue au CCTP sans être modélisée, calculée ou dénombrée par typologie.</p>
@@ -98,7 +98,7 @@
     <div class="sec-body" data-bind="quantites"></div>
   </section>
 
-  <section class="sec" id="couts" aria-labelledby="h-couts">
+  <section class="sec" id="couts" aria-labelledby="h-couts" data-fold="Afficher les coûts par poste">
     <div class="sec-head">
       <h2 id="h-couts">Coûts de travaux</h2>
       <p>Budget objectif du dossier actualisé par l'index BT01, et écarts de la variante chiffrés par ratios. Montants en € HT.</p>
@@ -149,7 +149,7 @@
     <div class="sec-body" data-bind="carbone"></div>
   </section>
 
-  <section class="sec" id="sources" aria-labelledby="h-src">
+  <section class="sec" id="sources" aria-labelledby="h-src" data-fold="Afficher les sources">
     <div class="sec-head">
       <h2 id="h-src">Sources et méthode</h2>
       <p>Toutes les valeurs sont rattachées à une pièce du dossier, à la maquette, à un prix publié ou à une hypothèse déclarée.</p>
@@ -162,5 +162,6 @@
   </footer>
 </main>
 <div class="cmp-tip" data-bind="tip" role="tooltip" hidden></div>
+<script type="module" src="../assets/js/fold.js"></script>
 </body>
 </html>

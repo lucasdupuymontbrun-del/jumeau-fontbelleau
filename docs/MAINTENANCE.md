@@ -78,3 +78,19 @@ Hypothèses à confirmer par l'étude énergétique : gains de la variante A2, f
 - **Couleurs** : noir et or Veck (`--or`, `--or-fonce`, `--noir-veck`) pour les boutons « Présentation », les soulignés et la visite guidée ; le rose « traceur » reste réservé à l'élément sélectionné (3D, plans) et aux repères. Code des tours partout : A1 bleu (`--a1`), A2 orange (`--a2`). Dans le jumeau, les barres gardent la couleur de l'usage ; seuls les repères A1 / A2 prennent la couleur de la tour.
 - **Jumeau sur téléphone** : la caméra recule quand l'écran est plus haut que large (`fitK()` dans `assets/js/energie3d.js`) pour garder les deux tours entières ; la barre du haut n'est plus collée en haut de l'écran.
 - **Comparatif sur téléphone** : les chiffres clés passent avant les documents (fin de `assets/js/comparatif.js`).
+
+## Page locataire « Mon logement » (10/11/2026)
+
+- Adresse : `locataire/?l=A2.36` (option `&m=2028-01` pour le mois). Sans `?l=`, la page propose de choisir un logement (démonstration) et donne les planches de QR codes.
+- Contenu : consommation du mois (chauffage, eau chaude, eau, électricité) en unités et en euros, comparaison à des logements semblables avec la même règle que le jumeau (vert, orange au-delà de +20 %, rouge au-delà de +30 %, « mieux que la moyenne » en dessous de −10 %), alerte du logement si elle concerne le mois affiché, un conseil choisi selon l'usage le plus élevé, l'année en barres.
+- Fichiers : `locataire/index.html`, `assets/js/locataire.js`, `assets/css/locataire.css`. Données : les mêmes que le jumeau (`data/energie/jumeau.json`, `logements.json`, `series.json`).
+- QR codes : `python tools/qr_locataires.py` écrit `locataire/qr/QR_logements_A1.pdf` et `QR_logements_A2.pdf` (A4, 12 étiquettes par page, à découper).
+- Depuis le jumeau, le détail d'un logement a un lien « Ce que voit le locataire ».
+- La page rappelle qu'en exploitation l'accès serait protégé par un code personnel (données personnelles, RGPD).
+
+## Coût global sur 50 ans (comparatif, 10/11/2026)
+
+- Rubrique « Coût global » du comparatif : études, travaux, énergie, entretien, remplacements, fin de vie et aides, en écart de la variante (tour A2) ; paramètres modifiables (honoraires, TVA du logement social, évolution des prix, actualisation, taxe foncière).
+- Données : `cycle` dans `data/comparatif/comparatif.json`, écrit par `cycle()` de `tools/build_comparatif.py` ; même calcul en JavaScript (`computeCycle()` de `assets/js/comparatif.js`) et en formules dans la feuille « Coût global 50 ans » du classeur.
+- Aides vérifiées le 10/11/2026 : CEE BAR-TH-155 réservée aux appartements existants (0 € en neuf) ; Fonds Chaleur solaire suspendu depuis le 4/11/2026 ; TVA 10 % (PLUS hors NPNRU) ou 5,5 % ; exonération de taxe foncière portée de 25 à 30 ans si les seuils RE2020 de 2028 sont atteints et certifiés (CGI art. 1384 A, décret 2023-560) : comptée seulement si la case est cochée.
+- Le générateur lit l'index du passeport, qui a maintenant des colonnes 4D : seules les 8 premières sont utilisées.

@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mon logement — Domaine de Fontbelleau</title>
+<meta name="description" content="Consommation d'énergie et d'eau de votre logement au Domaine de Fontbelleau, comparée à des logements semblables, avec un conseil personnalisé. Démonstrateur, données simulées.">
+<meta name="theme-color" content="#e6e8e5">
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/css/app.css">
+<link rel="stylesheet" href="../assets/css/locataire.css">
+</head>
+<body class="loc-page">
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-flame" viewBox="0 0 24 24"><path d="M12 3c1 3 4 5 4 9a4 4 0 0 1-8 0c0-2 1-3 2-4 0 2 1 3 2 3 0-3-1-5 0-8z"/></symbol>
+    <symbol id="i-shower" viewBox="0 0 24 24"><path d="M4 20V8a4 4 0 0 1 8 0"/><path d="M9 11h7"/><path d="M11 15v1M14 15v1M17 15v1M12 18v1M15 18v1"/></symbol>
+    <symbol id="i-drop" viewBox="0 0 24 24"><path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/></symbol>
+    <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></symbol>
+    <symbol id="i-tip" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-4 10.5c.8.8 1 1.5 1 2.5h6c0-1 .2-1.7 1-2.5A6 6 0 0 0 12 3z"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18v.5"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+  </defs>
+</svg>
+
+<header class="topbar">
+  <a class="brand" href="./">
+    <img class="brand-logo" src="../assets/img/veck-construction-640.png" width="640" height="119" alt="Veck Construction">
+    <span class="brand-sep" aria-hidden="true"></span>
+    <span class="brand-text"><span class="brand-name">Fontbelleau</span><span class="brand-sub">Mon logement</span></span>
+  </a>
+  <span class="demo-flag" title="Les consommations sont simulées pour la démonstration.">Données simulées</span>
+</header>
+
+<main class="loc" id="main">
+  <section class="loc-hero" data-bind="hero" aria-live="polite">
+    <p class="loc-load">Chargement de votre logement…</p>
+  </section>
+
+  <nav class="loc-months" data-bind="months" aria-label="Mois affiché"></nav>
+
+  <section class="loc-sec" aria-labelledby="h-mois">
+    <h2 id="h-mois" data-bind="mois-titre">Ce mois-ci</h2>
+    <p class="loc-total" data-bind="total"></p>
+    <div class="loc-cards" data-bind="cards"></div>
+  </section>
+
+  <section class="loc-sec" data-bind="alertes" hidden aria-labelledby="h-alerte">
+    <h2 id="h-alerte">Un point à vérifier</h2>
+    <div data-bind="alerte-list"></div>
+  </section>
+
+  <section class="loc-sec loc-tip" aria-labelledby="h-conseil">
+    <h2 id="h-conseil"><svg class="ico" aria-hidden="true"><use href="#i-tip"/></svg>Notre conseil</h2>
+    <p data-bind="conseil"></p>
+  </section>
+
+  <section class="loc-sec" aria-labelledby="h-annee">
+    <h2 id="h-annee">Sur l'année</h2>
+    <p class="loc-note">Énergie et eau de votre logement, en euros TTC par mois (hors abonnements).</p>
+    <div class="loc-chart" data-bind="chart"></div>
+  </section>
+
+  <details class="loc-sec loc-how">
+    <summary>Comment c'est calculé</summary>
+    <p>Le module thermique de votre logement compte le chauffage, l'eau chaude et l'eau froide ; il est relevé à distance chaque jour. L'électricité viendrait de votre compteur Linky, avec votre accord.</p>
+    <p>Votre chauffage est comparé à une référence qui tient compte de la météo, de l'étage, de l'orientation et de la taille du logement. L'eau et l'eau chaude sont comparées, par personne, aux autres logements de la tour ; l'électricité, aux logements de la tour qui ont le même nombre d'occupants. Au-delà de 20 % de plus, la carte passe à l'orange ; au-delà de 30 %, au rouge.</p>
+    <p data-bind="prix"></p>
+  </details>
+
+  <p class="loc-privacy"><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg><span>Démonstrateur : en exploitation, cette page serait protégée par un code personnel remis à l'entrée dans les lieux. Les consommations d'un logement sont des données personnelles (RGPD) : seul l'occupant les voit, le bailleur ne reçoit que des alertes.</span></p>
+</main>
+
+<footer class="loc-foot">
+  <a href="../">Jumeau énergétique du Domaine de Fontbelleau</a>
+  <span>Veck Construction — démonstrateur du projet ESCT MP2-BC1-P3, consommations fictives.</span>
+</footer>
+
+<script type="module" src="../assets/js/locataire.js"></script>
+</body>
+</html>

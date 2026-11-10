@@ -630,6 +630,8 @@ function renderDetail() {
       S.period === 'an' ? null : el('div', { class: 'mini' }, el('span', { class: 'ml', text: S.period === 'mois' ? 'Facture du mois' : 'Facture de la semaine' }), el('div', { class: 'mv', text: `${fmt(coutPer)} €` }), el('div', { class: 'ms', text: 'Énergie et eau, abonnement compris' })),
       el('div', { class: 'mini' }, el('span', { class: 'ml', text: 'Facture de l\'année' }), el('div', { class: 'mv', text: `${fmt(coutAn)} €` }), el('div', { class: 'ms', text: `${fmt(coutAn / 12)} € par mois en moyenne` }))),
     el('div', { class: 'dt-section' }, el('h3', { text: 'Mois par mois' }), monthlyBars(l)),
+    el('a', { class: 'dt-loc', href: `locataire/?l=${l.id}&m=${S.days[S.day].getFullYear()}-${String(S.days[S.day].getMonth() + 1).padStart(2, '0')}`, target: '_blank', rel: 'noopener' },
+      el('b', { text: 'Ce que voit le locataire' }), el('span', { text: 'Sa page « Mon logement », ouverte avec le QR code de son livret d\'accueil' })),
     el('details', { class: 'more more-dt' }, el('summary', { text: 'Pour aller plus loin' }),
       el('div', { class: 'dt-section' }, el('h3', { text: 'Sur l\'année' }),
         el('div', { class: 'dt-grid' },

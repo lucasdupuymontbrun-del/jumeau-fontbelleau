@@ -677,3 +677,10 @@ a { color: inherit; }
 .stage-tools button[data-tower="A2"]::before { background: var(--a2); }
 .vs-row > span:first-child { font-weight: 750; color: var(--a1); }
 .vs-row + .vs-row > span:first-child { color: var(--a2); }
+
+/* lien vers la page locataire depuis le détail d'un logement */
+.dt-loc { display: grid; gap: 2px; margin: 4px 0 12px; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(201, 164, 106, .55); background: rgba(201, 164, 106, .1); color: var(--encre); text-decoration: none; }
+.dt-loc b { color: #ecd3a4; font-size: 14px; }
+.dt-loc b::after { content: ' ↗'; }
+.dt-loc span { font-size: 12.5px; color: var(--encre-2); }
+.dt-loc:hover { border-color: var(--or); }

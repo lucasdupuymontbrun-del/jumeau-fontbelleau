@@ -680,3 +680,8 @@ li.empty { padding: 4px 0; }
   .sec[data-fold]:not(.is-open) > .sec-head > :not(h2):not(p):not(.fold-btn) { display: none; }
 }
 @media print { .sec[data-fold] > .sec-body { display: block !important; } .fold-btn { display: none !important; } }
+
+/* ---------- couleurs Veck Construction (même bloc que le passeport, sans la maquette) ---------- */
+:root { --or: #b89464; --or-fonce: #7a5c33; --or-trait: #9a7748; --noir-veck: #0b0b0d; --a1: #2a78d6; --a2: #eb6834; }
+.spray path { stroke: var(--or); }
+.secnav a[aria-current="true"] { border-bottom-color: var(--or-trait); }

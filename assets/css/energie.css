@@ -658,3 +658,22 @@ a { color: inherit; }
   .sitenav a { flex: 1; padding: 0 8px; }
   .sitenav + .top-links { margin-left: auto; }
 }
+
+/* ---------- couleurs Veck Construction ----------
+   Or pour la marque (présentation, lecture) ; le rose reste le traceur : logement sélectionné, focus.
+   Code des tours, le même sur les trois pages : A1 bleu, A2 orange (repères seulement, les barres gardent la couleur de l'usage). */
+:root { --a1: #4a90e2; --a2: #f07a45; }
+.btn-tour-top { background: rgba(201, 164, 106, .14); border-color: rgba(201, 164, 106, .6); color: #ecd3a4; }
+.btn-tour-top:hover { background: rgba(201, 164, 106, .26); border-color: var(--or); color: #fff; }
+.in-tour .btn-tour-top { background: var(--or); border-color: var(--or); color: #0b0b0d; }
+.tour { border-color: rgba(201, 164, 106, .55); }
+.tour-n { color: var(--or); }
+.tour-dots i.is-on { background: var(--or); }
+.tl-play.is-playing { background: var(--or); color: #0b0b0d; box-shadow: 0 0 0 6px rgba(201, 164, 106, .2); }
+.mo.is-live { border-color: var(--or); }
+.stage-tools button[data-tower="A1"]::before, .stage-tools button[data-tower="A2"]::before {
+  content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; background: var(--a1);
+}
+.stage-tools button[data-tower="A2"]::before { background: var(--a2); }
+.vs-row > span:first-child { font-weight: 750; color: var(--a1); }
+.vs-row + .vs-row > span:first-child { color: var(--a2); }

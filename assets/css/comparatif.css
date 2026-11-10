@@ -240,3 +240,7 @@
   .kpi { color: #000; background: #fff; border: 1px solid #999; }
 }
 @media (prefers-reduced-motion: reduce) { .dl { transition: none; } }
+
+/* couleurs Veck : or pour la marque, A2 en orange comme sa série */
+.cmp-vs { color: #7a5c33; }
+.tower[data-t="A2"] .ttag { background: rgba(235, 104, 52, .12); color: #a13d12; }

@@ -70,3 +70,11 @@ Hypothèses à confirmer par l'étude énergétique : gains de la variante A2, f
 - Ce site : https://lucasdupuymontbrun-del.github.io/jumeau-fontbelleau/ (comparatif : `comparatif/`)
 - Passeports des ouvrages : https://lucasdupuymontbrun-del.github.io/passeport-fontbelleau/
 - Les anciennes adresses `passeport-fontbelleau/energie/` et `passeport-fontbelleau/comparatif/` redirigent ici, paramètres compris.
+
+## Présentation commune aux deux sites (10/11/2026)
+
+- **Barre des sites** : en haut de chaque page, `nav.sitenav` avec trois liens (Maquette et ouvrages · Jumeau énergétique · Comparatif A1/A2). Le lien de la page courante porte `aria-current`. Le balisage est écrit à la main dans chaque page (accueil, `o/`, `A2-PM106/` du passeport ; `index.html` et `comparatif/` du jumeau) ; le style est dans `assets/css/app.css` (bloc identique dans les deux dépôts) et, pour le jumeau, dans `assets/css/energie.css`. Sur une fiche d'ouvrage, le lien « Maquette » ramène la maquette centrée sur l'ouvrage (`data-bind="back-maquette"`).
+- **Rubriques repliées sur téléphone** : `assets/js/fold.js` (même fichier dans les deux dépôts) replie, sous 760 px de large, les rubriques marquées `data-fold="…"` (le texte de l'attribut est celui du bouton). Fiches : identité, documents, approvisionnement. Comparatif : lots, quantités, coûts par poste, sources. Le menu des rubriques et les liens `#rubrique` déplient. Rien ne change sur ordinateur ni à l'impression.
+- **Couleurs** : noir et or Veck (`--or`, `--or-fonce`, `--noir-veck`) pour les boutons « Présentation », les soulignés et la visite guidée ; le rose « traceur » reste réservé à l'élément sélectionné (3D, plans) et aux repères. Code des tours partout : A1 bleu (`--a1`), A2 orange (`--a2`). Dans le jumeau, les barres gardent la couleur de l'usage ; seuls les repères A1 / A2 prennent la couleur de la tour.
+- **Jumeau sur téléphone** : la caméra recule quand l'écran est plus haut que large (`fitK()` dans `assets/js/energie3d.js`) pour garder les deux tours entières ; la barre du haut n'est plus collée en haut de l'écran.
+- **Comparatif sur téléphone** : les chiffres clés passent avant les documents (fin de `assets/js/comparatif.js`).

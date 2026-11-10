@@ -634,3 +634,5 @@ a { color: inherit; }
 [data-ciel="jour"] .stage-date { text-shadow: 0 1px 14px rgba(255, 255, 255, .55); color: #0f1d2a; }
 [data-ciel="jour"] .sd-meta { color: #2a3a48; }
 [data-ciel="bleue"] .topbar, [data-ciel="jour"] .topbar { background: linear-gradient(180deg, rgba(10, 14, 18, .55), rgba(10, 14, 18, 0)); }
+[data-ciel="bleue"] .sd-meta { color: #e3ebf3; text-shadow: 0 1px 10px rgba(4, 10, 22, .75); }
+[data-ciel="bleue"] .flag, [data-ciel="jour"] .flag { color: var(--encre); background: rgba(10, 14, 18, .5); border-color: rgba(238, 241, 242, .28); }

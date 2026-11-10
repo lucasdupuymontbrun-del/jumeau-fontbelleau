@@ -429,17 +429,24 @@ export async function createTwin(container, opts) {
       line.material = (state.floor && n === state.floor) ? ringSel : ringMat;
     }
   }
+  // écran en hauteur (téléphone) : on recule pour garder les tours entières
+  function fitK(tower) {
+    const a = camera.aspect || 1.6;
+    if (a >= 1) return 1;
+    return Math.min(tower === 'ALL' ? 1.9 : 1.5, Math.max(1, (tower === 'ALL' ? 1.2 : 0.95) / a));
+  }
+  function viewP(v, tower) { return v.t.clone().add(v.p.clone().sub(v.t).multiplyScalar(fitK(tower))); }
   function frame(tower = state.tower, plan = state.plan) {
     const v = VIEWS[tower] || VIEWS.ALL;
     if (plan) {
       const t = (tower === 'ALL' ? mid : towerC[tower]).clone();
       t.y = (state.floor ? floor0.A2 + (state.floor - 1) * STOREY : 15);
-      const h = tower === 'ALL' ? 150 : 68;
+      const h = (tower === 'ALL' ? 150 : 68) * fitK(tower);
       flyTo(new THREE.Vector3(t.x + 0.01, t.y + h, t.z + (tower === 'ALL' ? 22 : 10)), t);
     } else if (state.floor) {
       const t = v.t.clone(); t.y = floor0.A2 + (state.floor - 1) * STOREY + 1;
-      flyTo(t.clone().add(new THREE.Vector3(v.p.x - v.t.x, (tower === 'ALL' ? 52 : 34), v.p.z - v.t.z).multiplyScalar(0.9)), t);
-    } else flyTo(v.p, v.t);
+      flyTo(t.clone().add(new THREE.Vector3(v.p.x - v.t.x, (tower === 'ALL' ? 52 : 34), v.p.z - v.t.z).multiplyScalar(0.9 * fitK(tower))), t);
+    } else flyTo(viewP(v, tower), v.t);
   }
 
   // ---------- sélection, survol
@@ -539,7 +546,7 @@ export async function createTwin(container, opts) {
     if (first) { first = false; setStatus(''); onReady?.(); }
   }
   // entrée en scène
-  flyTo(VIEWS.ALL.p, VIEWS.ALL.t, reduceMotion() ? 0 : 2600);
+  flyTo(viewP(VIEWS.ALL, 'ALL'), VIEWS.ALL.t, reduceMotion() ? 0 : 2600);
   loop();
 
   return {
